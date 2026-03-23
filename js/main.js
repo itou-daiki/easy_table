@@ -560,7 +560,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     // 数字キーでページ切り替え
     if (!e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'SELECT') {
-      const pages = { '1': 'dashboard', '2': 'timetable', '3': 'teachers', '4': 'classes', '5': 'rooms', '6': 'subjects' };
+      const pages = { '1': 'dashboard', '2': 'timetable', '3': 'curriculum', '4': 'teachers', '5': 'classes', '6': 'rooms', '7': 'subjects' };
       if (pages[e.key]) navigateTo(pages[e.key]);
     }
   });
