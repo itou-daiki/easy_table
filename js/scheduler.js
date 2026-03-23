@@ -89,12 +89,14 @@ function sortByPriority(lessons) {
   });
 }
 
-/** (day, period) の組み合わせ生成 */
+/** (day, period) の組み合わせ生成（曜日別コマ数対応） */
 function generateTimeSlots(state) {
-  const periods = state.meta?.periodsPerDay || DEFAULT_PERIODS_PER_DAY;
+  const defaultPeriods = state.meta?.periodsPerDay || DEFAULT_PERIODS_PER_DAY;
+  const pByDay = state.meta?.periodsPerDayByDay || {};
   const days = state.meta?.workingDays || DEFAULT_DAYS;
   const slots = [];
   for (const day of days) {
+    const periods = Number(pByDay[day]) || defaultPeriods;
     for (let p = 0; p < periods; p++) slots.push({ day, period: p });
   }
   return slots;

@@ -346,10 +346,15 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
     if (viewMode === 'room') return s.roomId === viewId;
     return false;
   });
-  const periods = state.meta?.periodsPerDay || 6;
-  const periodTimes = calcPeriodTimes(state.meta);
-  const lunchAfter = (state.meta?.lunchAfterPeriod ?? 4) - 1; // 0始まりに変換
+  const defaultPeriods = state.meta?.periodsPerDay || 6;
+  const pByDay = state.meta?.periodsPerDayByDay || {};
+  // 全曜日の最大コマ数（グリッドの行数を決定）
+  const maxPeriods = Math.max(defaultPeriods, ...Object.values(pByDay).map(Number).filter(n => n > 0));
+  const periodTimes = calcPeriodTimes({ ...state.meta, periodsPerDay: maxPeriods });
+  const lunchAfter = (state.meta?.lunchAfterPeriod ?? 4) - 1;
   const workingDays = state.meta?.workingDays || [0,1,2,3,4];
+  /** 曜日ごとのコマ数を取得 */
+  const getPeriodsForDay = (d) => Number(pByDay[d]) || defaultPeriods;
   let dragData = null;
 
   // テーブル構築
@@ -363,7 +368,8 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
   for (const di of workingDays) {
     const th = document.createElement('th');
     th.className = 'bg-primary-500 text-white text-xs font-semibold py-2.5 px-2 border border-primary-400 text-center';
-    th.textContent = DAY_LABELS[di] || `Day${di}`;
+    const dayP = getPeriodsForDay(di);
+    th.innerHTML = `${DAY_LABELS[di] || `Day${di}`}${dayP !== defaultPeriods ? `<span class="text-[9px] opacity-70 block">${dayP}限</span>` : ''}`;
     hRow.appendChild(th);
   }
   thead.appendChild(hRow);
@@ -371,9 +377,9 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
 
   // ボディ
   const tbody = document.createElement('tbody');
-  for (let p = 0; p < periods; p++) {
+  for (let p = 0; p < maxPeriods; p++) {
     // 昼休み
-    if (p === lunchAfter + 1 && periods > lunchAfter + 1) {
+    if (p === lunchAfter + 1 && maxPeriods > lunchAfter + 1) {
       const lr = document.createElement('tr');
       lr.innerHTML = `<td class="bg-amber-50 text-amber-600 text-[10px] font-semibold py-1 px-2 text-center border border-gray-200">昼休み</td>
         <td colspan="${workingDays.length}" class="bg-amber-50 text-amber-500 text-[10px] text-center py-1 border border-gray-200">${state.meta?.lunchMinutes || 50}分</td>`;
@@ -387,8 +393,18 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
     row.appendChild(lbl);
 
     for (const d of workingDays) {
-      const slot = slots.find(s => s.day === d && s.period === p);
+      const dayPeriods = getPeriodsForDay(d);
       const td = document.createElement('td');
+
+      // この曜日のコマ数を超えている場合はグレーアウト
+      if (p >= dayPeriods) {
+        td.className = 'border border-gray-200 bg-gray-100 h-16';
+        td.innerHTML = '<div class="h-full flex items-center justify-center text-gray-300 text-[10px]">-</div>';
+        row.appendChild(td);
+        continue;
+      }
+
+      const slot = slots.find(s => s.day === d && s.period === p);
       td.className = 'tt-cell border border-gray-200 p-1 align-top cursor-pointer transition-all duration-100 min-h-[56px] h-16 relative';
       td.dataset.day = d; td.dataset.period = p;
 

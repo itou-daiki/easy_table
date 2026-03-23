@@ -587,7 +587,13 @@ document.addEventListener('DOMContentLoaded', () => {
     setVal('setting-year', m.yearLabel || '');
     setVal('setting-periods', String(m.periodsPerDay || 6));
     setVal('setting-period-minutes', String(m.periodMinutes || 50));
-    setVal('setting-start-time', m.startTime || '08:50');
+    setVal('setting-start-time', m.startTime || '08:35');
+    // 曜日別コマ数
+    const pbd = m.periodsPerDayByDay || {};
+    document.querySelectorAll('#setting-periods-by-day input').forEach(inp => {
+      const day = inp.dataset.day;
+      inp.value = pbd[day] || '';
+    });
     setVal('setting-break', String(m.breakMinutes || 10));
     setVal('setting-lunch-after', String(m.lunchAfterPeriod || 4));
     setVal('setting-lunch', String(m.lunchMinutes || 50));
@@ -624,7 +630,15 @@ document.addEventListener('DOMContentLoaded', () => {
     s.meta.yearLabel = document.getElementById('setting-year')?.value || '';
     s.meta.periodsPerDay = Number(document.getElementById('setting-periods')?.value) || 6;
     s.meta.periodMinutes = Number(document.getElementById('setting-period-minutes')?.value) || 50;
-    s.meta.startTime = document.getElementById('setting-start-time')?.value || '08:50';
+    s.meta.startTime = document.getElementById('setting-start-time')?.value || '08:35';
+    // 曜日別コマ数
+    const pbdSave = {};
+    document.querySelectorAll('#setting-periods-by-day input').forEach(inp => {
+      const day = inp.dataset.day;
+      const val = Number(inp.value);
+      if (val > 0) pbdSave[day] = val;
+    });
+    s.meta.periodsPerDayByDay = pbdSave;
     s.meta.breakMinutes = Number(document.getElementById('setting-break')?.value) || 10;
     s.meta.lunchAfterPeriod = Number(document.getElementById('setting-lunch-after')?.value) || 4;
     s.meta.lunchMinutes = Number(document.getElementById('setting-lunch')?.value) || 50;

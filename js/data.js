@@ -38,6 +38,7 @@ const COLUMN_DEFS = {
     { csv: 'コース制限', prop: 'courseRestriction', aliases: ['course_restriction'] },
     { csv: '特別教室要否', prop: 'requiresSpecialRoom', aliases: ['requires_special_room'] },
     { csv: '学校設定科目', prop: 'isSchoolOriginal', aliases: ['is_school_original'] },
+    { csv: '代替科目', prop: 'alternativeFor', aliases: ['alternative_for'] },
   ],
   slots: [
     { csv: '曜日', prop: 'day', aliases: ['day'] },

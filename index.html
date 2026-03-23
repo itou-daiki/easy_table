@@ -146,7 +146,19 @@
               </div>
               <div>
                 <label class="block text-[11px] font-semibold text-gray-500 mb-1">1限開始時刻</label>
-                <input id="setting-start-time" type="time" value="08:50" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+                <input id="setting-start-time" type="time" value="08:35" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+              </div>
+              <div class="lg:col-span-2">
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">曜日別コマ数（空欄=デフォルト値を使用）</label>
+                <div class="flex gap-2" id="setting-periods-by-day">
+                  <div class="text-center"><div class="text-[10px] text-gray-400 mb-0.5">月</div><input data-day="0" type="number" min="0" max="8" placeholder="-" class="w-12 text-sm text-center border border-gray-300 rounded px-1 py-1 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"></div>
+                  <div class="text-center"><div class="text-[10px] text-gray-400 mb-0.5">火</div><input data-day="1" type="number" min="0" max="8" placeholder="-" class="w-12 text-sm text-center border border-gray-300 rounded px-1 py-1 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"></div>
+                  <div class="text-center"><div class="text-[10px] text-gray-400 mb-0.5">水</div><input data-day="2" type="number" min="0" max="8" placeholder="-" class="w-12 text-sm text-center border border-gray-300 rounded px-1 py-1 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"></div>
+                  <div class="text-center"><div class="text-[10px] text-gray-400 mb-0.5">木</div><input data-day="3" type="number" min="0" max="8" placeholder="-" class="w-12 text-sm text-center border border-gray-300 rounded px-1 py-1 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"></div>
+                  <div class="text-center"><div class="text-[10px] text-gray-400 mb-0.5">金</div><input data-day="4" type="number" min="0" max="8" placeholder="-" class="w-12 text-sm text-center border border-gray-300 rounded px-1 py-1 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"></div>
+                  <div class="text-center"><div class="text-[10px] text-gray-400 mb-0.5">土</div><input data-day="5" type="number" min="0" max="8" placeholder="-" class="w-12 text-sm text-center border border-gray-300 rounded px-1 py-1 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none"></div>
+                </div>
+                <p class="text-[9px] text-gray-400 mt-1">例: 金曜だけ5限の場合 → 金の欄に「5」を入力</p>
               </div>
               <div>
                 <label class="block text-[11px] font-semibold text-gray-500 mb-1">休憩時間（分）</label>
