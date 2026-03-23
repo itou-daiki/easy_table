@@ -472,20 +472,31 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ツールバーボタン
   document.getElementById('btn-auto-place')?.addEventListener('click', async () => {
-    showNotification('自動配置を開始...', 'info');
+    const st = getState();
+    const existingCount = (st.slots || []).filter(s => s.slotType !== 'fixed' && s.slotType !== 'meeting').length;
+    if (existingCount > 0) {
+      if (!confirm(`一括自動配置を実行すると、固定コマ・会議以外の既存${existingCount}コマが削除され、ゼロから再配置されます。\n\n実行しますか？`)) return;
+    }
+    showNotification('一括自動配置を開始...', 'info');
     try {
-      const result = await autoSchedule(getState(), { onProgress: showProgress });
-      setState(result); saveToLocalStorage(); refreshTimetable();
-      showNotification('自動配置完了', 'success');
+      const result = await autoSchedule(st, { onProgress: showProgress });
+      setState(result); saveToLocalStorage();
+      const { errors, warnings } = runValidation();
+      showNotification(`自動配置完了（エラー${errors.length} / 警告${warnings.length}）`, errors.length > 0 ? 'warning' : 'success');
     } catch (e) { showNotification('自動配置失敗: ' + e.message, 'error'); }
   });
 
   document.getElementById('btn-optimize')?.addEventListener('click', async () => {
-    showNotification('最適化を開始...', 'info');
+    const st = getState();
+    if (!st.slots?.length) { showNotification('最適化するコマがありません', 'warning'); return; }
+    showNotification('配置の最適化を開始（既存コマを保持したまま改善）...', 'info');
     try {
-      const result = await optimizeExisting(getState(), { onProgress: showProgress });
-      setState(result); saveToLocalStorage(); refreshTimetable();
-      showNotification('最適化完了', 'success');
+      const before = validate(st);
+      const result = await optimizeExisting(st, { onProgress: showProgress });
+      setState(result); saveToLocalStorage();
+      const after = runValidation();
+      const improved = (before.errors.length + before.warnings.length) - (after.errors.length + after.warnings.length);
+      showNotification(`最適化完了（${improved > 0 ? improved + '件改善' : '変化なし'}）`, 'success');
     } catch (e) { showNotification('最適化失敗: ' + e.message, 'error'); }
   });
 
