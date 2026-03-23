@@ -2,48 +2,130 @@
  * scheduler.js — 時間割自動生成・最適化エンジン
  * バックトラッキング＋制約伝播 → 焼きなまし法によるスケジューリング
  */
-import { validate, validateSlotPlacement } from "./validator.js";
+import { validate, validateSlotPlacement } from './validator.js';
 
-const DAYS = ["月", "火", "水", "木", "金"];
-const DEFAULT_MAX_PERIODS = 6;
+const DEFAULT_PERIODS_PER_DAY = 6;
+const DEFAULT_DAYS = [0, 1, 2, 3, 4]; // 月〜金
+
+/** stateのディープコピー */
+function cloneState(s) { return JSON.parse(JSON.stringify(s)); }
+
+/**
+ * 科目×クラス×教員の組み合わせから配置すべき授業リストを生成する
+ * 既存のslotsから教員・教室の割り当てを推測する
+ */
+function generateLessons(state) {
+  const lessons = [];
+  const classes = state.classes || [];
+  const subjects = state.subjects || [];
+  const teachers = state.teachers || [];
+  const rooms = state.rooms || [];
+  const existingSlots = state.slots || [];
+
+  // 既存のスロットからクラス・科目→教員・教室のマッピングを構築
+  const assignmentMap = new Map();
+  for (const slot of existingSlots) {
+    const key = `${slot.classId}-${slot.subjectId}`;
+    if (!assignmentMap.has(key)) {
+      assignmentMap.set(key, {
+        teacherId: slot.teacherId,
+        roomId: slot.roomId,
+        slotType: slot.slotType || 'single',
+      });
+    }
+  }
+
+  for (const cls of classes) {
+    for (const subj of subjects) {
+      const key = `${cls.id}-${subj.id}`;
+      const assignment = assignmentMap.get(key);
+
+      // 割り当てが既知の場合はそれを使用
+      let teacherId = assignment?.teacherId;
+      let roomId = assignment?.roomId;
+      const slotType = assignment?.slotType || 'single';
+
+      // 教員が未割り当ての場合、担当可能な教員を探す
+      if (!teacherId) {
+        const capable = teachers.find(t => (t.subjects || []).includes(subj.id));
+        if (!capable) continue; // 担当教員がいない科目はスキップ
+        teacherId = capable.id;
+      }
+
+      // 教室が未割り当ての場合
+      if (!roomId) {
+        if (subj.requiresSpecialRoom) {
+          const special = rooms.find(r => r.type !== '普通教室');
+          roomId = special?.id || rooms[0]?.id;
+        } else {
+          // クラスに対応する普通教室を割り当て
+          const classRoom = rooms.find(r => r.name?.includes(cls.name?.substring(0, 3)));
+          roomId = classRoom?.id || rooms[0]?.id;
+        }
+      }
+
+      lessons.push({
+        classId: cls.id,
+        subjectId: subj.id,
+        teacherId,
+        roomId,
+        hoursPerWeek: subj.hoursPerWeek || 1,
+        requiresSpecialRoom: subj.requiresSpecialRoom || false,
+        slotType,
+        isElective: slotType === 'elective' || slotType === 'course',
+        isTeamTeaching: slotType === 'team_teaching',
+        isDouble: slotType === 'double',
+      });
+    }
+  }
+  return lessons;
+}
 
 /** 配置優先度順にソート（制約の厳しい順） */
 function sortByPriority(lessons) {
   return [...lessons].sort((a, b) => {
-    if (a.slotType === "fixed" && b.slotType !== "fixed") return -1;
-    if (b.slotType === "fixed" && a.slotType !== "fixed") return 1;
+    // 固定コマ最優先
+    if (a.slotType === 'fixed' && b.slotType !== 'fixed') return -1;
+    if (b.slotType === 'fixed' && a.slotType !== 'fixed') return 1;
+    // 特別教室使用
     if (a.requiresSpecialRoom && !b.requiresSpecialRoom) return -1;
     if (b.requiresSpecialRoom && !a.requiresSpecialRoom) return 1;
+    // 選択授業・コース別
     if (a.isElective && !b.isElective) return -1;
     if (b.isElective && !a.isElective) return 1;
+    // TT・連続
     if ((a.isTeamTeaching || a.isDouble) && !(b.isTeamTeaching || b.isDouble)) return -1;
     if ((b.isTeamTeaching || b.isDouble) && !(a.isTeamTeaching || a.isDouble)) return 1;
+    // 週時数の多い順
     return (b.hoursPerWeek || 0) - (a.hoursPerWeek || 0);
   });
 }
 
 /** 利用可能な(day, period)の組み合わせを生成 */
 function generateTimeSlots(state) {
-  const max = state.maxPeriods || DEFAULT_MAX_PERIODS;
+  const periodsPerDay = state.meta?.periodsPerDay || DEFAULT_PERIODS_PER_DAY;
+  const days = state.meta?.workingDays || DEFAULT_DAYS;
   const slots = [];
-  for (const day of DAYS) for (let p = 1; p <= max; p++) slots.push({ day, period: p });
+  for (const day of days) {
+    for (let p = 0; p < periodsPerDay; p++) {
+      slots.push({ day, period: p });
+    }
+  }
   return slots;
 }
 
-/** stateのディープコピー */
-function cloneState(s) { return JSON.parse(JSON.stringify(s)); }
-
 /** スロット候補オブジェクトを生成 */
-function makeSlot(ts, lesson, type = "auto") {
+function makeSlot(ts, lesson) {
   return {
-    day: ts.day, period: ts.period, classId: lesson.classId,
-    teacherId: lesson.teacherId, roomId: lesson.roomId,
-    subjectId: lesson.subjectId, slotType: type,
+    day: ts.day, period: ts.period,
+    classId: lesson.classId, teacherId: lesson.teacherId,
+    roomId: lesson.roomId, subjectId: lesson.subjectId,
+    slotType: lesson.slotType || 'single',
   };
 }
 
 /** 制約伝播: 配置可能な時間枠を絞り込む */
-function propagateConstraints(state, lesson, timeSlots) {
+function getCandidates(state, lesson, timeSlots) {
   return timeSlots.filter(ts => validateSlotPlacement(state, makeSlot(ts, lesson)).valid);
 }
 
@@ -51,23 +133,16 @@ function propagateConstraints(state, lesson, timeSlots) {
  * バックトラッキングで授業を配置する
  * @returns {object|null} 成功時は新しいstate、失敗時はnull
  */
-function backtrack(state, lessons, timeSlots, onProgress, totalLessons) {
+function backtrack(state, lessons, timeSlots, onProgress, totalLessons, depth = 0) {
   if (lessons.length === 0) return state;
+  // 深さ制限（スタックオーバーフロー防止）
+  if (depth > 500) return null;
 
   const [current, ...remaining] = lessons;
   const hoursNeeded = current.hoursPerWeek || 1;
 
-  // 固定スロットはそのまま配置
-  if (current.slotType === "fixed" && current.day && current.period) {
-    const slot = makeSlot(current, current, "fixed");
-    if (!validateSlotPlacement(state, slot).valid) return null;
-    const ns = cloneState(state);
-    ns.slots.push(slot);
-    return backtrack(ns, remaining, timeSlots, onProgress, totalLessons);
-  }
-
   // 制約伝播で候補を絞り込む
-  const candidates = propagateConstraints(state, current, timeSlots);
+  const candidates = getCandidates(state, current, timeSlots);
   if (candidates.length < hoursNeeded) return null;
 
   for (const ts of candidates) {
@@ -80,14 +155,14 @@ function backtrack(state, lessons, timeSlots, onProgress, totalLessons) {
     // 残り時数がある場合は同じ授業を再度キューに入れる
     if (hoursNeeded > 1) {
       const reduced = { ...current, hoursPerWeek: hoursNeeded - 1 };
-      const result = backtrack(ns, [reduced, ...remaining], timeSlots, onProgress, totalLessons);
+      const result = backtrack(ns, [reduced, ...remaining], timeSlots, onProgress, totalLessons, depth + 1);
       if (result) return result;
     } else {
       if (onProgress) {
         const placed = totalLessons - remaining.length;
         onProgress(Math.round((placed / totalLessons) * 80), `配置中... (${placed}/${totalLessons})`);
       }
-      const result = backtrack(ns, remaining, timeSlots, onProgress, totalLessons);
+      const result = backtrack(ns, remaining, timeSlots, onProgress, totalLessons, depth + 1);
       if (result) return result;
     }
   }
@@ -95,11 +170,12 @@ function backtrack(state, lessons, timeSlots, onProgress, totalLessons) {
 }
 
 /** ソフト制約違反をコストとして計算 */
-function computeCost(state) { return validate(state).warnings.length; }
+function computeCost(state) {
+  return validate(state).warnings.length;
+}
 
 /**
  * 焼きなまし法による最適化
- * ソフト制約の違反数をコストとして最小化する
  */
 function simulatedAnnealing(state, options = {}) {
   const maxIter = options.maxIterations || 5000;
@@ -115,7 +191,9 @@ function simulatedAnnealing(state, options = {}) {
 
   for (let i = 0; i < maxIter; i++) {
     // 非固定スロットからランダムに2つ選んで時間枠を交換
-    const movable = cur.slots.map((s, idx) => ({ ...s, _idx: idx })).filter(s => s.slotType !== "fixed");
+    const movable = cur.slots
+      .map((s, idx) => ({ ...s, _idx: idx }))
+      .filter(s => s.slotType !== 'fixed');
     if (movable.length < 2) break;
 
     const idxA = Math.floor(Math.random() * movable.length);
@@ -137,11 +215,13 @@ function simulatedAnnealing(state, options = {}) {
     if (delta < 0 || Math.random() < Math.exp(-delta / temp)) {
       cur = ns;
       curCost = newCost;
-      if (curCost < bestCost) { best = cloneState(cur); bestCost = curCost; }
+      if (curCost < bestCost) {
+        best = cloneState(cur);
+        bestCost = curCost;
+      }
     }
     temp *= coolingRate;
 
-    // 進捗報告（80%〜100%の範囲）
     if (onProgress && i % 100 === 0) {
       onProgress(80 + Math.round((i / maxIter) * 20), `最適化中... (コスト: ${bestCost})`);
     }
@@ -156,10 +236,8 @@ function runAsync(fn) {
 
 /**
  * 自動スケジュール生成
- * 非固定スロットをクリアし、優先度順にバックトラッキングで配置。
- * 解が見つからない場合は貪欲法＋焼きなまし法にフォールバック。
  * @param {object} state - 現在の状態
- * @param {object} options - { onProgress?, maxIterations?, initialTemp?, coolingRate? }
+ * @param {object} options - { onProgress? }
  * @returns {Promise<object>} 新しい状態
  */
 export async function autoSchedule(state, options = {}) {
@@ -167,56 +245,67 @@ export async function autoSchedule(state, options = {}) {
 
   // 非固定スロットをクリア
   const base = cloneState(state);
-  base.slots = base.slots.filter(s => s.slotType === "fixed");
+  base.slots = base.slots.filter(s => s.slotType === 'fixed');
 
-  if (onProgress) onProgress(0, "初期化中...");
-  const lessons = sortByPriority(state.lessons || []);
+  if (onProgress) onProgress(0, '初期化中...');
+
+  // 授業リストを生成
+  const lessons = sortByPriority(generateLessons(state));
   const timeSlots = generateTimeSlots(state);
-  if (onProgress) onProgress(5, "バックトラッキング開始...");
+
+  if (lessons.length === 0) {
+    if (onProgress) onProgress(100, '配置する授業がありません');
+    return base;
+  }
+
+  if (onProgress) onProgress(5, 'バックトラッキング開始...');
 
   // バックトラッキングで配置を試行
-  const result = await runAsync(() => backtrack(base, lessons, timeSlots, onProgress, lessons.length));
+  const result = await runAsync(() =>
+    backtrack(base, lessons, timeSlots, onProgress, lessons.length)
+  );
 
   if (result) {
-    if (onProgress) onProgress(80, "最適化フェーズ開始...");
+    if (onProgress) onProgress(80, '最適化フェーズ開始...');
     const optimized = await runAsync(() => simulatedAnnealing(result, { ...options, onProgress }));
-    if (onProgress) onProgress(100, "完了");
+    if (onProgress) onProgress(100, '完了');
     return optimized;
   }
 
   // フォールバック: 貪欲法で部分配置
-  if (onProgress) onProgress(50, "バックトラッキング失敗。貪欲法で再試行...");
+  if (onProgress) onProgress(50, 'バックトラッキング失敗。貪欲法で再試行...');
   const greedy = cloneState(base);
   for (const lesson of lessons) {
     const hours = lesson.hoursPerWeek || 1;
     for (let h = 0; h < hours; h++) {
-      const cands = propagateConstraints(greedy, lesson, timeSlots);
-      if (cands.length > 0) greedy.slots.push(makeSlot(cands[0], lesson));
+      const cands = getCandidates(greedy, lesson, timeSlots);
+      if (cands.length > 0) {
+        greedy.slots.push(makeSlot(cands[0], lesson));
+      }
     }
   }
 
-  // 焼きなまし法で最適化
   const optimized = await runAsync(() => simulatedAnnealing(greedy, { ...options, onProgress }));
-  if (onProgress) onProgress(100, "完了（部分解）");
+  if (onProgress) onProgress(100, '完了（部分解）');
   return optimized;
 }
 
 /**
  * 既存スケジュールの最適化（焼きなまし法）
  * @param {object} state - 既存の状態
- * @param {object} options - { onProgress?, maxIterations?, initialTemp?, coolingRate? }
+ * @param {object} options - { onProgress? }
  * @returns {Promise<object>} 最適化された状態
  */
 export async function optimizeExisting(state, options = {}) {
   const onProgress = options.onProgress || null;
-  if (onProgress) onProgress(0, "既存スケジュールの最適化を開始...");
+  if (onProgress) onProgress(0, '既存スケジュールの最適化を開始...');
 
   const optimized = await runAsync(() => simulatedAnnealing(state, {
     ...options,
     onProgress: (pct, msg) => {
-      if (onProgress) onProgress(Math.max(0, Math.round((pct - 80) * 5)), msg);
+      if (onProgress) onProgress(pct, msg);
     },
   }));
-  if (onProgress) onProgress(100, "最適化完了");
+  if (onProgress) onProgress(100, '最適化完了');
   return optimized;
 }

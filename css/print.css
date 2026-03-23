@@ -1,222 +1,30 @@
-/* ============================================
-   Print Styles — 時間割作成システム
-   ============================================ */
-
-/* Hide non-printable elements */
-.no-print {
-  display: none !important;
-}
-
-/* Reset page setup */
-@page {
-  size: A4 landscape;
-  margin: 15mm 10mm;
-}
-
-/* Base print resets */
-body {
-  background: #fff;
-  color: #000;
-  font-size: 10pt;
-  line-height: 1.4;
-}
-
-main {
-  max-width: 100%;
-  padding: 0;
-  margin: 0;
-}
-
-/* ============================================
-   Timetable Grid — Print
-   ============================================ */
-#timetable-grid {
-  overflow: visible;
-}
-
-.timetable {
-  width: 100%;
-  border-collapse: collapse;
-  box-shadow: none;
-  border: 2px solid #333;
-  page-break-inside: avoid;
-}
-
-.timetable th {
-  background: #f0f0f0 !important;
-  color: #000 !important;
-  border: 1px solid #999;
-  padding: 6px 4px;
-  font-size: 9pt;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.timetable td {
-  border: 1px solid #bbb;
-  padding: 4px;
-}
-
-.period-label {
-  background: #f5f5f5 !important;
-  font-size: 8pt;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.period-time {
-  font-size: 6pt;
-}
-
-.lunch {
-  background: #f9f9f9 !important;
-  color: #666 !important;
-  font-size: 8pt;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-/* Cell content for print */
-.cell {
-  min-height: auto;
-  min-width: auto;
-}
-
-.cell:hover {
-  background: transparent;
-  box-shadow: none;
-}
-
-.cell-content {
-  padding: 2px;
-  min-height: auto;
-}
-
-.cell-subject {
-  font-size: 8pt;
-  font-weight: 700;
-}
-
-.cell-teacher {
-  font-size: 7pt;
-  color: #555;
-}
-
-.cell-room {
-  font-size: 6.5pt;
-  color: #777;
-}
-
-/* Remove drag/validation colors for ink saving */
-.cell.cell-error,
-.cell.cell-warning {
-  border-left: 1px solid #bbb;
-  background: transparent;
-}
-
-.cell.dragging,
-.cell.drag-over {
-  opacity: 1;
-  border: 1px solid #bbb;
-  background: transparent;
-}
-
-/* ============================================
-   Data Tables — Print
-   ============================================ */
-.data-table {
-  box-shadow: none;
-  border: 1px solid #999;
-  page-break-inside: auto;
-}
-
-.data-table th {
-  background: #eee !important;
-  border-bottom: 2px solid #666;
-  font-size: 8pt;
-  padding: 4px 6px;
-  -webkit-print-color-adjust: exact;
-  print-color-adjust: exact;
-}
-
-.data-table td {
-  font-size: 8pt;
-  padding: 3px 6px;
-  border-bottom: 1px solid #ccc;
-}
-
-.data-table tbody tr:nth-child(even) {
-  background: transparent;
-}
-
-.data-table tbody tr:hover {
-  background: transparent;
-}
-
-/* ============================================
-   Validation Results — Print
-   ============================================ */
-.validation-item {
-  border: 1px solid #ccc;
-  background: transparent;
-  font-size: 8pt;
-  padding: 4px 8px;
-}
-
-.validation-item.error {
-  border-left: 3px solid #666;
-  background: transparent;
-  color: #000;
-}
-
-.validation-item.warning {
-  border-left: 3px solid #999;
-  background: transparent;
-  color: #000;
-}
-
-/* ============================================
-   Section Headers — Print
-   ============================================ */
-.section-header {
-  margin-bottom: 8px;
-}
-
-.section-header h2 {
-  font-size: 12pt;
-  border-bottom: 1px solid #333;
-  padding-bottom: 4px;
-}
-
-/* ============================================
-   Page Break Rules
-   ============================================ */
-section {
-  page-break-before: auto;
-  page-break-after: auto;
-}
-
-section + section {
-  page-break-before: always;
-}
-
-table {
-  page-break-inside: avoid;
-}
-
-tr {
-  page-break-inside: avoid;
-}
-
-/* Hide elements that make no sense in print */
-#modal-overlay,
-#progress-bar,
-#notification-area,
-#csv-file-input {
-  display: none !important;
-}
-
-/* Links: don't show URL */
-a::after {
-  content: none !important;
+@media print {
+  .no-print { display: none !important; }
+  @page { size: A4 landscape; margin: 12mm 10mm; }
+  body { background: #fff; color: #000; font-size: 10pt; }
+  #app { display: block; }
+  main { padding: 0; max-width: 100%; }
+  /* 時間割テーブル */
+  #timetable-grid table {
+    width: 100%; border-collapse: collapse; box-shadow: none;
+    border: 2px solid #333; page-break-inside: avoid;
+  }
+  #timetable-grid th {
+    background: #eee !important; color: #000 !important;
+    border: 1px solid #999; padding: 4px; font-size: 9pt;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #timetable-grid td { border: 1px solid #bbb; padding: 3px; }
+  .tt-cell { min-height: auto; box-shadow: none !important; }
+  .tt-cell.cell-error, .tt-cell.cell-warning { box-shadow: none !important; background: transparent; }
+  /* 科目色を薄く */
+  [class*="subj-"] { background: transparent !important; border-left: 1px solid #bbb !important; }
+  /* マスターテーブル */
+  table.data-tbl { box-shadow: none; border: 1px solid #999; }
+  table.data-tbl th { background: #eee !important; print-color-adjust: exact; }
+  table.data-tbl td { font-size: 8pt; padding: 3px 6px; }
+  /* 非表示要素 */
+  #modal-overlay, #progress-bar, #notification-area, #csv-file-input,
+  #sidebar, #sidebar-overlay, header, #validation-results { display: none !important; }
+  section + section { page-break-before: always; }
 }

@@ -6,41 +6,41 @@
 /** CSVカラム定義（ヘッダー名とプロパティ名の対応） */
 const COLUMN_DEFS = {
   teachers: [
-    { csv: 'id', prop: 'id' },
-    { csv: 'name', prop: 'name' },
-    { csv: 'subjects', prop: 'subjects' },
-    { csv: 'available_days', prop: 'availableDays' },
-    { csv: 'is_part_time', prop: 'isPartTime' },
-    { csv: 'max_periods_per_day', prop: 'maxPeriodsPerDay' },
-    { csv: 'max_consecutive', prop: 'maxConsecutive' }
+    { csv: 'ID', prop: 'id', aliases: ['id'] },
+    { csv: '氏名', prop: 'name', aliases: ['name'] },
+    { csv: '担当科目', prop: 'subjects', aliases: ['subjects'] },
+    { csv: '出勤曜日', prop: 'availableDays', aliases: ['available_days'] },
+    { csv: '非常勤', prop: 'isPartTime', aliases: ['is_part_time'] },
+    { csv: '1日最大コマ数', prop: 'maxPeriodsPerDay', aliases: ['max_periods_per_day'] },
+    { csv: '最大連続コマ数', prop: 'maxConsecutive', aliases: ['max_consecutive'] },
   ],
   classes: [
-    { csv: 'id', prop: 'id' },
-    { csv: 'name', prop: 'name' },
-    { csv: 'grade', prop: 'grade' },
-    { csv: 'course', prop: 'course' }
+    { csv: 'ID', prop: 'id', aliases: ['id'] },
+    { csv: 'クラス名', prop: 'name', aliases: ['name'] },
+    { csv: '学年', prop: 'grade', aliases: ['grade'] },
+    { csv: 'コース', prop: 'course', aliases: ['course'] },
   ],
   rooms: [
-    { csv: 'id', prop: 'id' },
-    { csv: 'name', prop: 'name' },
-    { csv: 'type', prop: 'type' },
-    { csv: 'capacity', prop: 'capacity' }
+    { csv: 'ID', prop: 'id', aliases: ['id'] },
+    { csv: '教室名', prop: 'name', aliases: ['name'] },
+    { csv: '種別', prop: 'type', aliases: ['type'] },
+    { csv: '定員', prop: 'capacity', aliases: ['capacity'] },
   ],
   subjects: [
-    { csv: 'id', prop: 'id' },
-    { csv: 'name', prop: 'name' },
-    { csv: 'hours_per_week', prop: 'hoursPerWeek' },
-    { csv: 'requires_special_room', prop: 'requiresSpecialRoom' }
+    { csv: 'ID', prop: 'id', aliases: ['id'] },
+    { csv: '科目名', prop: 'name', aliases: ['name'] },
+    { csv: '週時数', prop: 'hoursPerWeek', aliases: ['hours_per_week'] },
+    { csv: '特別教室要否', prop: 'requiresSpecialRoom', aliases: ['requires_special_room'] },
   ],
   slots: [
-    { csv: 'day', prop: 'day' },
-    { csv: 'period', prop: 'period' },
-    { csv: 'class_id', prop: 'classId' },
-    { csv: 'subject_id', prop: 'subjectId' },
-    { csv: 'teacher_id', prop: 'teacherId' },
-    { csv: 'room_id', prop: 'roomId' },
-    { csv: 'slot_type', prop: 'slotType' }
-  ]
+    { csv: '曜日', prop: 'day', aliases: ['day'] },
+    { csv: '時限', prop: 'period', aliases: ['period'] },
+    { csv: 'クラスID', prop: 'classId', aliases: ['class_id'] },
+    { csv: '科目ID', prop: 'subjectId', aliases: ['subject_id'] },
+    { csv: '教員ID', prop: 'teacherId', aliases: ['teacher_id'] },
+    { csv: '教室ID', prop: 'roomId', aliases: ['room_id'] },
+    { csv: 'コマ種別', prop: 'slotType', aliases: ['slot_type'] },
+  ],
 };
 
 /** snake_caseからcamelCaseへの変換 */
@@ -223,9 +223,12 @@ export function importCSV(csvText, type, state) {
     return state;
   }
   const rawRows = parseCSV(csvText);
-  // CSVヘッダー（snake_case）→ camelCaseプロパティへの変換マップ
+  // CSVヘッダー → camelCaseプロパティへの変換マップ（日本語・英語両対応）
   const csvToProp = {};
-  columns.forEach(c => { csvToProp[c.csv] = c.prop; });
+  columns.forEach(c => {
+    csvToProp[c.csv] = c.prop;
+    if (c.aliases) c.aliases.forEach(a => { csvToProp[a] = c.prop; });
+  });
 
   const records = rawRows.map(row => {
     const record = {};

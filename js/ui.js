@@ -1,510 +1,435 @@
 /**
- * ui.js — 時間割システムのDOM操作・ドラッグ＆ドロップモジュール
- * すべてのDOM操作をこのモジュールに集約する
+ * ui.js — DOM操作・レンダリングモジュール
+ * index.html の構造に対応し、Tailwind クラスで描画する
  */
 
-const DAYS = ['月', '火', '水', '木', '金'];
-const PERIODS = ['1限', '2限', '3限', '4限', '5限', '6限'];
-const VIEW_MODES = [
-  { id: 'class', label: 'クラス別' },
-  { id: 'teacher', label: '教員別' },
-  { id: 'room', label: '教室別' },
-];
-const MASTER_TYPES = [
-  { id: 'teachers', label: '教員', fields: ['name', 'subjects'] },
-  { id: 'classes', label: 'クラス', fields: ['name', 'grade', 'section'] },
-  { id: 'rooms', label: '教室', fields: ['name', 'capacity'] },
-  { id: 'subjects', label: '科目', fields: ['name', 'weeklyHours'] },
+const DAY_LABELS = ['月', '火', '水', '木', '金'];
+const PERIOD_TIMES = [
+  '8:50–9:40', '9:50–10:40', '10:50–11:40',
+  '11:50–12:40', '13:30–14:20', '14:30–15:20',
 ];
 
-/** コールバック群（initUIで設定） */
-let cb = {};
-/** 現在の表示状態 */
-let currentView = { mode: 'class', id: null };
-/** ドラッグ中のデータ */
-let dragData = null;
-
-// ─── ユーティリティ ───
-
-/** 要素を生成する */
-function el(tag, attrs = {}, children = []) {
-  const e = document.createElement(tag);
-  for (const [k, v] of Object.entries(attrs)) {
-    if (k === 'className') e.className = v;
-    else if (k === 'textContent') e.textContent = v;
-    else if (k === 'innerHTML') e.innerHTML = v;
-    else e.setAttribute(k, v);
-  }
-  for (const c of children) {
-    if (typeof c === 'string') e.appendChild(document.createTextNode(c));
-    else if (c) e.appendChild(c);
-  }
-  return e;
-}
-
-/** マスター配列からIDで名前を引く */
+/** IDで名前を引く */
 function nameById(list, id) {
-  const r = list.find(x => x.id === id);
-  return r ? r.name : '?';
+  return (list || []).find(x => x.id === id)?.name ?? '';
 }
 
-// ─── UI初期化 ───
-
-/**
- * UI全体を初期化する
- * @param {object} state - 現在の状態
- * @param {object} callbacks - コールバック群
- */
-export function initUI(state, callbacks) {
-  cb = callbacks;
-  const root = document.getElementById('app') || document.body;
-  root.innerHTML = '';
-  root.appendChild(buildToolbar());
-  root.appendChild(buildViewSelector(state));
-  root.appendChild(el('div', { id: 'timetable-container' }));
-  root.appendChild(buildMasterSection(state));
-  root.appendChild(el('div', { id: 'validation-panel', className: 'validation-panel' }));
-  root.appendChild(el('div', { id: 'progress-bar', className: 'progress-bar hidden' }));
-  root.appendChild(el('div', { id: 'notification-area', className: 'notification-area' }));
-  root.appendChild(buildModal());
-  // 初期ビューのIDを設定
-  setDefaultViewId(state);
-  renderTimetable(state, currentView.mode, currentView.id);
+/** 科目インデックスからCSSクラスを返す */
+function subjColorClass(subjects, subjectId) {
+  const idx = (subjects || []).findIndex(s => s.id === subjectId);
+  return idx >= 0 ? `subj-${idx % 10}` : '';
 }
 
-/** ツールバーを構築 */
-function buildToolbar() {
-  const bar = el('div', { className: 'toolbar' });
-  const buttons = [
-    { label: '自動配置', action: () => cb.onAutoSchedule?.() },
-    { label: '最適化', action: () => cb.onOptimize?.() },
-    { label: 'CSVインポート', action: () => triggerFileInput() },
-    { label: 'CSVエクスポート', action: () => cb.onExport?.() },
-    { label: '保存', action: () => cb.onSave?.() },
-    { label: '制約チェック', action: () => cb.onAutoSchedule?.('validate') },
+// ─── エンティティ選択 ───
+
+export function populateEntityPicker(state, viewMode) {
+  const el = document.getElementById('entity-picker');
+  if (!el) return null;
+  el.innerHTML = '';
+  const key = viewMode === 'class' ? 'classes' : viewMode === 'teacher' ? 'teachers' : 'rooms';
+  for (const item of state[key] || []) {
+    const o = document.createElement('option');
+    o.value = item.id; o.textContent = item.name;
+    el.appendChild(o);
+  }
+  return el.value || null;
+}
+
+// ─── ダッシュボード ───
+
+export function renderDashboard(state, validationResult) {
+  const stats = document.getElementById('dashboard-stats');
+  if (!stats) return;
+
+  const totalSlots = (state.classes?.length || 0) * (state.meta?.periodsPerDay || 6) * 5;
+  const filled = state.slots?.length || 0;
+  const pct = totalSlots > 0 ? Math.round((filled / totalSlots) * 100) : 0;
+  const errCount = validationResult?.errors?.length || 0;
+  const warnCount = validationResult?.warnings?.length || 0;
+
+  const items = [
+    { label: '教員', count: state.teachers?.length || 0, icon: '◉', accent: 'text-primary-600' },
+    { label: 'クラス', count: state.classes?.length || 0, icon: '◎', accent: 'text-emerald-600' },
+    { label: '教室', count: state.rooms?.length || 0, icon: '□', accent: 'text-amber-600' },
+    { label: '配置率', count: `${pct}%`, icon: '▦', accent: 'text-violet-600' },
   ];
-  for (const b of buttons) {
-    const btn = el('button', { className: 'toolbar-btn', textContent: b.label });
-    btn.addEventListener('click', b.action);
-    bar.appendChild(btn);
+  stats.innerHTML = items.map(s => `
+    <div class="bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors">
+      <div class="flex items-center justify-between mb-1">
+        <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">${s.label}</span>
+        <span class="text-gray-300 text-xs">${s.icon}</span>
+      </div>
+      <div class="text-2xl font-bold ${s.accent}">${s.count}</div>
+    </div>`).join('');
+
+  // 制約チェック結果
+  const violDiv = document.getElementById('violations-content');
+  if (!violDiv) return;
+
+  // コマ配置プログレスバー
+  let html = `
+    <div class="mb-4">
+      <div class="flex items-center justify-between text-[10px] text-gray-500 mb-1.5">
+        <span>コマ配置状況</span><span class="font-semibold">${filled} / ${totalSlots}</span>
+      </div>
+      <div class="h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div class="h-full rounded-full transition-all duration-500 ${pct >= 80 ? 'bg-emerald-500' : pct >= 50 ? 'bg-primary-500' : 'bg-amber-400'}" style="width:${pct}%"></div>
+      </div>
+    </div>`;
+
+  // 制約違反サマリー
+  if (errCount + warnCount > 0) {
+    html += `<div class="space-y-1.5">`;
+    if (errCount > 0) html += `<div class="text-xs px-3 py-1.5 rounded bg-red-50 border border-red-200 text-red-700">エラー: ${errCount}件</div>`;
+    if (warnCount > 0) html += `<div class="text-xs px-3 py-1.5 rounded bg-amber-50 border border-amber-200 text-amber-700">警告: ${warnCount}件</div>`;
+    html += `</div>`;
+  } else if (filled > 0) {
+    html += `<div class="text-xs px-3 py-1.5 rounded bg-emerald-50 border border-emerald-200 text-emerald-700">制約違反なし</div>`;
   }
-  // 非表示のファイル入力（CSVインポート用）
-  const fileInput = el('input', { type: 'file', id: 'csv-file-input', accept: '.csv', className: 'hidden' });
-  fileInput.addEventListener('change', (e) => {
-    if (e.target.files[0]) cb.onImport?.(e.target.files[0]);
-    e.target.value = '';
-  });
-  bar.appendChild(fileInput);
-  return bar;
-}
 
-/** ファイル選択ダイアログを開く */
-function triggerFileInput() {
-  document.getElementById('csv-file-input')?.click();
-}
+  // 教員ワークロード（上位5名）
+  if ((state.teachers?.length || 0) > 0 && filled > 0) {
+    const loads = (state.teachers || []).map(t => {
+      const count = (state.slots || []).filter(s => s.teacherId === t.id).length;
+      return { name: t.name, count, max: (t.maxPeriodsPerDay || 5) * 5 };
+    }).sort((a, b) => b.count - a.count).slice(0, 5);
 
-// ─── ビューセレクタ ───
-
-/** ビュー切り替えUIを構築 */
-function buildViewSelector(state) {
-  const wrap = el('div', { className: 'view-selector' });
-  // モード選択
-  const modeSelect = el('select', { id: 'view-mode-select' });
-  for (const m of VIEW_MODES) {
-    modeSelect.appendChild(el('option', { value: m.id, textContent: m.label }));
-  }
-  modeSelect.addEventListener('change', () => {
-    currentView.mode = modeSelect.value;
-    updateIdSelector(state);
-    cb.onViewChange?.(currentView.mode, currentView.id);
-  });
-  // ID選択
-  const idSelect = el('select', { id: 'view-id-select' });
-  idSelect.addEventListener('change', () => {
-    currentView.id = idSelect.value;
-    cb.onViewChange?.(currentView.mode, currentView.id);
-  });
-  wrap.appendChild(el('label', { textContent: '表示: ' }));
-  wrap.appendChild(modeSelect);
-  wrap.appendChild(idSelect);
-  return wrap;
-}
-
-/** ビューID選択肢を更新 */
-function updateIdSelector(state) {
-  const sel = document.getElementById('view-id-select');
-  if (!sel) return;
-  sel.innerHTML = '';
-  const listKey = currentView.mode === 'class' ? 'classes'
-    : currentView.mode === 'teacher' ? 'teachers' : 'rooms';
-  for (const item of state[listKey] || []) {
-    sel.appendChild(el('option', { value: item.id, textContent: item.name }));
-  }
-  currentView.id = state[listKey]?.[0]?.id || null;
-}
-
-/** 初期ビューIDを設定 */
-function setDefaultViewId(state) {
-  updateIdSelector(state);
-}
-
-// ─── 時間割グリッド描画 ───
-
-/**
- * 時間割グリッドを描画する
- * @param {object} state - 状態
- * @param {string} viewMode - 表示モード（'class'|'teacher'|'room'）
- * @param {string} viewId - 表示対象のID
- */
-export function renderTimetable(state, viewMode, viewId) {
-  currentView.mode = viewMode;
-  currentView.id = viewId;
-  const container = document.getElementById('timetable-container');
-  if (!container) return;
-  container.innerHTML = '';
-  const table = el('table', { className: 'timetable-grid' });
-  // ヘッダー行（曜日）
-  const thead = el('thead');
-  const headerRow = el('tr');
-  headerRow.appendChild(el('th', { textContent: '' })); // 左上角
-  for (const d of DAYS) headerRow.appendChild(el('th', { textContent: d }));
-  thead.appendChild(headerRow);
-  table.appendChild(thead);
-  // 各時限の行
-  const tbody = el('tbody');
-  const slots = filterSlots(state, viewMode, viewId);
-  for (let p = 0; p < PERIODS.length; p++) {
-    const row = el('tr');
-    row.appendChild(el('th', { textContent: PERIODS[p] }));
-    for (let d = 0; d < DAYS.length; d++) {
-      const slot = slots.find(s => s.day === d && s.period === p);
-      const td = createCell(d, p, slot, state);
-      row.appendChild(td);
+    html += `<div class="mt-4"><div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">教員ワークロード (Top 5)</div>`;
+    for (const l of loads) {
+      const loadPct = l.max > 0 ? Math.min(100, Math.round((l.count / l.max) * 100)) : 0;
+      const barColor = loadPct >= 90 ? 'bg-red-400' : loadPct >= 70 ? 'bg-amber-400' : 'bg-primary-400';
+      html += `<div class="flex items-center gap-2 mb-1.5">
+        <span class="text-[11px] text-gray-600 w-16 truncate">${l.name}</span>
+        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full ${barColor} rounded-full" style="width:${loadPct}%"></div>
+        </div>
+        <span class="text-[10px] text-gray-400 w-8 text-right">${l.count}h</span>
+      </div>`;
     }
-    tbody.appendChild(row);
+    html += `</div>`;
   }
-  table.appendChild(tbody);
-  container.appendChild(table);
+
+  violDiv.innerHTML = html;
 }
 
-/** 表示モードに応じてコマを絞り込む */
-function filterSlots(state, viewMode, viewId) {
-  if (!viewId) return [];
-  return state.slots.filter(s => {
+// ─── 時間割グリッド ───
+
+export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSlotMove, onCellClick, onCellEdit) {
+  const grid = document.getElementById('timetable-grid');
+  if (!grid) return;
+  const slots = (state.slots || []).filter(s => {
     if (viewMode === 'class') return s.classId === viewId;
     if (viewMode === 'teacher') return s.teacherId === viewId;
     if (viewMode === 'room') return s.roomId === viewId;
     return false;
   });
-}
+  const periods = state.meta?.periodsPerDay || 6;
+  let dragData = null;
 
-/** 時間割セルを生成する */
-function createCell(day, period, slot, state) {
-  const td = el('td', {
-    className: 'timetable-cell',
-    'data-day': String(day),
-    'data-period': String(period),
-  });
-  if (slot) {
-    // コマ情報を表示
-    td.setAttribute('draggable', 'true');
-    td.classList.add('filled');
-    if (slot.error) td.classList.add('error');
-    if (slot.warning) td.classList.add('warning');
-    const subj = el('div', { className: 'cell-subject', textContent: nameById(state.subjects, slot.subjectId) });
-    const teacher = el('div', { className: 'cell-teacher', textContent: nameById(state.teachers, slot.teacherId) });
-    const room = el('div', { className: 'cell-room', textContent: nameById(state.rooms, slot.roomId) });
-    td.appendChild(subj);
-    td.appendChild(teacher);
-    td.appendChild(room);
-    // ドラッグ開始
-    td.addEventListener('dragstart', (e) => {
-      dragData = { day, period, slot: structuredClone(slot) };
-      e.dataTransfer.effectAllowed = 'move';
-      td.classList.add('dragging');
-      highlightCandidates(day, period, true);
-    });
-    td.addEventListener('dragend', () => {
-      td.classList.remove('dragging');
-      highlightCandidates(day, period, false);
-      dragData = null;
-    });
-  } else {
-    td.classList.add('empty');
+  // テーブル構築
+  const tbl = document.createElement('table');
+  tbl.className = 'w-full border-collapse bg-white rounded-lg overflow-hidden border border-gray-200';
+
+  // ヘッダー
+  const thead = document.createElement('thead');
+  const hRow = document.createElement('tr');
+  hRow.innerHTML = '<th class="bg-primary-500 text-white text-xs font-semibold py-2.5 px-2 w-20 border border-primary-400"></th>';
+  for (const d of DAY_LABELS) {
+    const th = document.createElement('th');
+    th.className = 'bg-primary-500 text-white text-xs font-semibold py-2.5 px-2 border border-primary-400 text-center';
+    th.textContent = d;
+    hRow.appendChild(th);
   }
-  // ドロップ対象
-  td.addEventListener('dragover', (e) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    td.classList.add('drag-over');
-  });
-  td.addEventListener('dragleave', () => td.classList.remove('drag-over'));
-  td.addEventListener('drop', (e) => {
-    e.preventDefault();
-    td.classList.remove('drag-over');
-    if (!dragData) return;
-    const to = { day, period };
-    const from = { day: dragData.day, period: dragData.period };
-    cb.onSlotMove?.(from, to, dragData.slot);
-    dragData = null;
-  });
-  return td;
-}
+  thead.appendChild(hRow);
+  tbl.appendChild(thead);
 
-/** 移動候補セルをハイライトする */
-function highlightCandidates(fromDay, fromPeriod, show) {
-  const cells = document.querySelectorAll('.timetable-cell.empty');
-  for (const c of cells) {
-    if (show) c.classList.add('candidate');
-    else c.classList.remove('candidate');
-  }
-}
-
-/**
- * 単一セルを更新する
- * @param {number} day - 曜日
- * @param {number} period - 時限
- * @param {object|null} slotData - コマデータ（nullで空にする）
- */
-export function updateCell(day, period, slotData) {
-  const td = document.querySelector(
-    `.timetable-cell[data-day="${day}"][data-period="${period}"]`
-  );
-  if (!td) return;
-  td.innerHTML = '';
-  td.className = 'timetable-cell';
-  if (slotData) {
-    td.classList.add('filled');
-    if (slotData.error) td.classList.add('error');
-    if (slotData.warning) td.classList.add('warning');
-    td.setAttribute('draggable', 'true');
-    td.appendChild(el('div', { className: 'cell-subject', textContent: slotData.subjectName || '' }));
-    td.appendChild(el('div', { className: 'cell-teacher', textContent: slotData.teacherName || '' }));
-    td.appendChild(el('div', { className: 'cell-room', textContent: slotData.roomName || '' }));
-  } else {
-    td.classList.add('empty');
-    td.removeAttribute('draggable');
-  }
-}
-
-// ─── マスターデータ管理 ───
-
-/** マスター管理セクション全体を構築 */
-function buildMasterSection(state) {
-  const section = el('div', { id: 'master-section', className: 'master-section' });
-  // タブバー
-  const tabBar = el('div', { className: 'master-tabs' });
-  for (const mt of MASTER_TYPES) {
-    const tab = el('button', {
-      className: 'master-tab',
-      textContent: mt.label,
-      'data-type': mt.id,
-    });
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.master-tab').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      renderMasterTable(state, mt.id);
-    });
-    tabBar.appendChild(tab);
-  }
-  section.appendChild(tabBar);
-  section.appendChild(el('div', { id: 'master-table-container' }));
-  return section;
-}
-
-/**
- * マスターデータテーブルを描画する
- * @param {object} state - 状態
- * @param {string} type - データ種別
- */
-export function renderMasterTable(state, type) {
-  const container = document.getElementById('master-table-container');
-  if (!container) return;
-  container.innerHTML = '';
-  const mt = MASTER_TYPES.find(m => m.id === type);
-  if (!mt) return;
-  const records = state[type] || [];
-  // テーブル
-  const table = el('table', { className: 'master-table' });
-  const thead = el('thead');
-  const headRow = el('tr');
-  for (const f of mt.fields) headRow.appendChild(el('th', { textContent: f }));
-  headRow.appendChild(el('th', { textContent: '操作' }));
-  thead.appendChild(headRow);
-  table.appendChild(thead);
-  const tbody = el('tbody');
-  // イベント委譲で編集・削除を処理
-  tbody.addEventListener('click', (e) => {
-    const btn = e.target.closest('button');
-    if (!btn) return;
-    const id = btn.dataset.id;
-    if (btn.classList.contains('edit-btn')) openEditModal(state, type, id);
-    if (btn.classList.contains('delete-btn')) {
-      if (confirm('削除してもよろしいですか？')) cb.onMasterUpdate?.('delete', type, id);
+  // ボディ
+  const tbody = document.createElement('tbody');
+  for (let p = 0; p < periods; p++) {
+    // 昼休み
+    if (p === 4) {
+      const lr = document.createElement('tr');
+      lr.innerHTML = `<td class="bg-amber-50 text-amber-600 text-[10px] font-semibold py-1 px-2 text-center border border-gray-200">昼休み</td>
+        <td colspan="5" class="bg-amber-50 text-amber-500 text-[10px] text-center py-1 border border-gray-200">12:40 – 13:30</td>`;
+      tbody.appendChild(lr);
     }
-  });
-  for (const rec of records) {
-    const row = el('tr');
-    for (const f of mt.fields) {
-      const val = Array.isArray(rec[f]) ? rec[f].join(', ') : (rec[f] ?? '');
-      row.appendChild(el('td', { textContent: String(val) }));
+    const row = document.createElement('tr');
+    // 時限ラベル
+    const lbl = document.createElement('td');
+    lbl.className = 'bg-gray-50 text-center py-2 px-2 border border-gray-200 w-20';
+    lbl.innerHTML = `<div class="text-xs font-semibold text-gray-700">${p + 1}限</div><div class="text-[9px] text-gray-400">${PERIOD_TIMES[p] || ''}</div>`;
+    row.appendChild(lbl);
+
+    for (let d = 0; d < 5; d++) {
+      const slot = slots.find(s => s.day === d && s.period === p);
+      const td = document.createElement('td');
+      td.className = 'tt-cell border border-gray-200 p-1 align-top cursor-pointer transition-all duration-100 min-h-[56px] h-16 relative';
+      td.dataset.day = d; td.dataset.period = p;
+
+      // 制約違反
+      const vKey = `${d}-${p}`;
+      if (validationMap?.[vKey] === 'error') td.classList.add('cell-error');
+      else if (validationMap?.[vKey] === 'warning') td.classList.add('cell-warning');
+
+      if (slot) {
+        td.draggable = true;
+        const colorCls = subjColorClass(state.subjects, slot.subjectId);
+        td.innerHTML = `<div class="rounded px-1.5 py-1 h-full flex flex-col justify-center ${colorCls}">
+          <div class="text-[11px] font-bold text-gray-800 leading-tight truncate">${nameById(state.subjects, slot.subjectId)}</div>
+          <div class="text-[9px] text-gray-500 truncate mt-0.5">${nameById(state.teachers, slot.teacherId)}</div>
+          <div class="text-[8px] text-gray-400 truncate">${nameById(state.rooms, slot.roomId)}</div>
+        </div>`;
+
+        // コマ入りセルクリック → 編集/削除
+        td.addEventListener('click', e => {
+          if (e.defaultPrevented) return;
+          onCellEdit?.(d, p, slot);
+        });
+
+        // ドラッグ開始
+        td.addEventListener('dragstart', e => {
+          const s = slots.find(s => s.day === d && s.period === p);
+          if (!s) { e.preventDefault(); return; }
+          dragData = { day: d, period: p, slot: { ...s } };
+          e.dataTransfer.effectAllowed = 'move';
+          td.classList.add('dragging');
+        });
+        td.addEventListener('dragend', () => { td.classList.remove('dragging'); dragData = null; });
+      } else {
+        td.innerHTML = '<div class="h-full min-h-[48px] flex items-center justify-center"><span class="text-gray-200 text-lg">+</span></div>';
+        td.addEventListener('mouseenter', () => td.querySelector('span')?.classList.replace('text-gray-200', 'text-primary-300'));
+        td.addEventListener('mouseleave', () => td.querySelector('span')?.classList.replace('text-primary-300', 'text-gray-200'));
+        // 空セルクリック
+        td.addEventListener('click', () => onCellClick?.(d, p));
+      }
+
+      // ドロップ対象
+      td.addEventListener('dragover', e => { e.preventDefault(); td.classList.add('drag-over'); });
+      td.addEventListener('dragleave', () => td.classList.remove('drag-over'));
+      td.addEventListener('drop', e => {
+        e.preventDefault(); td.classList.remove('drag-over');
+        if (!dragData || !onSlotMove) return;
+        onSlotMove({ day: dragData.day, period: dragData.period }, { day: d, period: p }, dragData.slot);
+        dragData = null;
+      });
+      row.appendChild(td);
     }
-    const actTd = el('td');
-    actTd.appendChild(el('button', { className: 'edit-btn', 'data-id': rec.id, textContent: '編集' }));
-    actTd.appendChild(el('button', { className: 'delete-btn', 'data-id': rec.id, textContent: '削除' }));
-    row.appendChild(actTd);
     tbody.appendChild(row);
   }
-  table.appendChild(tbody);
-  container.appendChild(table);
-  // 追加フォーム
-  const form = el('form', { className: 'master-add-form' });
-  for (const f of mt.fields) {
-    form.appendChild(el('input', { name: f, placeholder: f, required: '' }));
+  tbl.appendChild(tbody);
+  grid.innerHTML = '';
+  grid.appendChild(tbl);
+}
+
+// ─── マスターデータテーブル ───
+
+const MASTER_COLS = {
+  teachers: [
+    { key: 'name', label: '氏名' },
+    { key: 'subjects', label: '担当科目', fmt: (v, st) => (v||[]).map(id => nameById(st.subjects, id) || id).join(', ') },
+    { key: 'availableDays', label: '出勤曜日', fmt: v => (v||[]).map(d => DAY_LABELS[d]).join(' ') },
+    { key: 'maxPeriodsPerDay', label: '最大コマ/日' },
+    { key: 'isPartTime', label: '非常勤', fmt: v => v ? 'Yes' : '' },
+  ],
+  classes: [
+    { key: 'name', label: 'クラス名' },
+    { key: 'grade', label: '学年' },
+    { key: 'course', label: 'コース' },
+  ],
+  rooms: [
+    { key: 'name', label: '教室名' },
+    { key: 'type', label: '種別' },
+    { key: 'capacity', label: '定員' },
+  ],
+  subjects: [
+    { key: 'name', label: '科目名' },
+    { key: 'hoursPerWeek', label: '週時数' },
+    { key: 'requiresSpecialRoom', label: '特別教室', fmt: v => v ? 'Yes' : '' },
+  ],
+};
+
+export function renderMasterTable(state, type, searchQuery, onEdit, onDelete) {
+  const container = document.getElementById(`${type}-table-container`);
+  if (!container) return;
+  const cols = MASTER_COLS[type];
+  if (!cols) return;
+
+  let records = state[type] || [];
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    records = records.filter(r => cols.some(c => {
+      const v = c.fmt ? c.fmt(r[c.key], state) : String(r[c.key] ?? '');
+      return v.toLowerCase().includes(q);
+    }));
   }
-  const addBtn = el('button', { type: 'submit', textContent: '追加' });
-  form.appendChild(addBtn);
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const data = {};
-    for (const f of mt.fields) {
-      const input = form.elements[f];
-      data[f] = input.value.trim();
+
+  const tbl = document.createElement('table');
+  tbl.className = 'data-tbl w-full text-sm';
+
+  // ヘッダー
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const c of cols) {
+    const th = document.createElement('th');
+    th.className = 'text-left text-[11px] font-semibold text-gray-500 bg-gray-50 px-4 py-2.5 border-b border-gray-200';
+    th.textContent = c.label;
+    hr.appendChild(th);
+  }
+  hr.innerHTML += '<th class="text-right text-[11px] font-semibold text-gray-500 bg-gray-50 px-4 py-2.5 border-b border-gray-200 no-print">操作</th>';
+  thead.appendChild(hr);
+  tbl.appendChild(thead);
+
+  // ボディ
+  const tbody = document.createElement('tbody');
+  for (const rec of records) {
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-gray-100 hover:bg-gray-50 transition-colors';
+    for (const c of cols) {
+      const td = document.createElement('td');
+      td.className = 'px-4 py-2.5 text-xs text-gray-700';
+      td.textContent = c.fmt ? c.fmt(rec[c.key], state) : (rec[c.key] ?? '');
+      tr.appendChild(td);
     }
-    cb.onMasterUpdate?.('add', type, data);
-    form.reset();
+    const actTd = document.createElement('td');
+    actTd.className = 'px-4 py-2.5 text-right no-print';
+    actTd.innerHTML = `
+      <button class="edit-btn text-[11px] text-primary-600 hover:text-primary-800 mr-2 font-medium" data-id="${rec.id}">編集</button>
+      <button class="del-btn text-[11px] text-red-500 hover:text-red-700 font-medium" data-id="${rec.id}">削除</button>`;
+    tr.appendChild(actTd);
+    tbody.appendChild(tr);
+  }
+  if (records.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="${cols.length + 1}" class="text-center py-8 text-xs text-gray-400">データがありません</td></tr>`;
+  }
+  tbl.appendChild(tbody);
+
+  // 古いリスナーを除去してから差し替え
+  const newContainer = container.cloneNode(false);
+  container.parentNode.replaceChild(newContainer, container);
+  newContainer.appendChild(tbl);
+
+  // イベント委譲（コンテナごと差し替え済みなのでリスナーは1つだけ）
+  newContainer.addEventListener('click', e => {
+    const btn = e.target.closest('.edit-btn, .del-btn');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (btn.classList.contains('edit-btn')) onEdit?.(type, id);
+    else if (btn.classList.contains('del-btn') && confirm('削除してもよろしいですか？')) onDelete?.(type, id);
   });
-  container.appendChild(form);
 }
 
 // ─── モーダル ───
 
-/** モーダル要素を構築 */
-function buildModal() {
-  const overlay = el('div', { id: 'modal-overlay', className: 'modal-overlay hidden' });
-  const dialog = el('div', { className: 'modal-dialog' });
-  dialog.appendChild(el('h3', { id: 'modal-title' }));
-  dialog.appendChild(el('form', { id: 'modal-form' }));
-  const btnRow = el('div', { className: 'modal-buttons' });
-  const saveBtn = el('button', { id: 'modal-save', textContent: '保存' });
-  const cancelBtn = el('button', { id: 'modal-cancel', textContent: 'キャンセル' });
-  cancelBtn.addEventListener('click', closeModal);
-  btnRow.appendChild(saveBtn);
-  btnRow.appendChild(cancelBtn);
-  dialog.appendChild(btnRow);
-  overlay.appendChild(dialog);
-  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
-  return overlay;
-}
-
-/** 編集モーダルを開く */
-function openEditModal(state, type, id) {
-  const mt = MASTER_TYPES.find(m => m.id === type);
-  if (!mt) return;
-  const record = (state[type] || []).find(r => r.id === id);
-  if (!record) return;
+/**
+ * 編集モーダルを表示する
+ * fields: [{ key, label, type?, placeholder?, options?: [{value,label}] }]
+ */
+export function showEditModal(title, fields, values, onSave) {
   const overlay = document.getElementById('modal-overlay');
-  const title = document.getElementById('modal-title');
-  const form = document.getElementById('modal-form');
-  const saveBtn = document.getElementById('modal-save');
-  title.textContent = `${mt.label}を編集`;
-  form.innerHTML = '';
-  for (const f of mt.fields) {
-    const val = Array.isArray(record[f]) ? record[f].join(', ') : (record[f] ?? '');
-    const label = el('label', { textContent: f });
-    const input = el('input', { name: f, value: String(val) });
-    form.appendChild(label);
-    form.appendChild(input);
+  const tEl = document.getElementById('modal-title');
+  const body = document.getElementById('modal-body');
+  tEl.textContent = title;
+  body.innerHTML = '';
+
+  for (const f of fields) {
+    const div = document.createElement('div');
+    div.className = 'mb-3';
+    const val = Array.isArray(values[f.key]) ? values[f.key].join(', ') : (values[f.key] ?? '');
+    let inputHtml;
+    if (f.options) {
+      // ドロップダウン選択
+      const opts = f.options.map(o =>
+        `<option value="${o.value}" ${o.value === String(val) ? 'selected' : ''}>${o.label}</option>`
+      ).join('');
+      inputHtml = `<select name="${f.key}" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none bg-white">
+        <option value="">-- 選択 --</option>${opts}</select>`;
+    } else {
+      inputHtml = `<input name="${f.key}" type="${f.type || 'text'}" value="${String(val)}"
+        placeholder="${f.placeholder || ''}"
+        class="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">`;
+    }
+    div.innerHTML = `<label class="block text-[11px] font-semibold text-gray-600 mb-1">${f.label}</label>${inputHtml}`;
+    body.appendChild(div);
   }
+
   overlay.classList.remove('hidden');
-  // 保存ボタン（イベントリスナーの重複を防ぐ）
-  const newSave = saveBtn.cloneNode(true);
-  saveBtn.parentNode.replaceChild(newSave, saveBtn);
-  newSave.addEventListener('click', (e) => {
-    e.preventDefault();
+  const close = () => overlay.classList.add('hidden');
+
+  // Escキーで閉じる
+  const escHandler = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); } };
+  document.addEventListener('keydown', escHandler);
+
+  const wire = (id, fn) => {
+    const el = document.getElementById(id);
+    const clone = el.cloneNode(true);
+    el.parentNode.replaceChild(clone, el);
+    clone.addEventListener('click', fn);
+  };
+  wire('btn-modal-save', () => {
     const data = {};
-    for (const f of mt.fields) data[f] = form.elements[f].value.trim();
-    cb.onMasterUpdate?.('update', type, id, data);
-    closeModal();
+    for (const f of fields) data[f.key] = body.querySelector(`[name="${f.key}"]`)?.value?.trim() ?? '';
+    onSave(data);
+    close();
+    document.removeEventListener('keydown', escHandler);
   });
+  wire('btn-modal-cancel', () => { close(); document.removeEventListener('keydown', escHandler); });
+  wire('btn-modal-close', () => { close(); document.removeEventListener('keydown', escHandler); });
 }
 
-/** モーダルを閉じる */
-function closeModal() {
-  document.getElementById('modal-overlay')?.classList.add('hidden');
+// ─── 制約チェック結果 ───
+
+export function showValidationResults(errors, warnings) {
+  const el = document.getElementById('validation-results');
+  if (!el) return {};
+  const items = [
+    ...(errors || []).map(e => ({ ...e, lv: 'error' })),
+    ...(warnings || []).map(w => ({ ...w, lv: 'warning' })),
+  ];
+  if (items.length === 0) {
+    el.innerHTML = '<div class="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2">制約違反はありません</div>';
+    return {};
+  }
+  el.innerHTML = `<div class="space-y-1.5">${items.map(i =>
+    `<div class="text-xs px-3 py-1.5 rounded-lg border ${
+      i.lv === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-700'
+    }">[${i.type}] ${i.message}</div>`
+  ).join('')}</div>`;
+
+  const map = {};
+  for (const i of items) {
+    if (i.day != null && i.period != null) {
+      const k = `${i.day}-${i.period}`;
+      if (!map[k] || i.lv === 'error') map[k] = i.lv;
+    }
+  }
+  return map;
 }
 
-// ─── バリデーション結果表示 ───
+// ─── プログレス ───
 
-/**
- * 制約チェック結果を表示する
- * @param {Array} results - {type:'error'|'warning', message:string, day?:number, period?:number}
- */
-export function showValidationResults(results) {
-  const panel = document.getElementById('validation-panel');
-  if (!panel) return;
-  panel.innerHTML = '';
-  if (!results || results.length === 0) {
-    panel.appendChild(el('p', { className: 'validation-ok', textContent: '制約違反はありません' }));
-    return;
-  }
-  const list = el('ul', { className: 'validation-list' });
-  for (const r of results) {
-    const li = el('li', { className: `validation-${r.type}`, textContent: r.message });
-    list.appendChild(li);
-  }
-  panel.appendChild(list);
-  // 対応セルにエラー/警告クラスを付与
-  document.querySelectorAll('.timetable-cell.error, .timetable-cell.warning').forEach(c => {
-    c.classList.remove('error', 'warning');
-  });
-  for (const r of results) {
-    if (r.day == null || r.period == null) continue;
-    const cell = document.querySelector(
-      `.timetable-cell[data-day="${r.day}"][data-period="${r.period}"]`
-    );
-    if (cell) cell.classList.add(r.type);
-  }
-}
-
-// ─── 進捗表示 ───
-
-/**
- * スケジューラの進捗を表示する
- * @param {number} percent - 進捗率（0〜100）
- * @param {string} message - 表示メッセージ
- */
-export function showProgress(percent, message) {
+export function showProgress(pct, msg) {
   const bar = document.getElementById('progress-bar');
+  const fill = document.getElementById('progress-fill');
+  const txt = document.getElementById('progress-text');
   if (!bar) return;
   bar.classList.remove('hidden');
-  bar.innerHTML = '';
-  const track = el('div', { className: 'progress-track' });
-  const fill = el('div', { className: 'progress-fill' });
-  fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
-  track.appendChild(fill);
-  bar.appendChild(track);
-  bar.appendChild(el('span', { className: 'progress-text', textContent: `${message} (${Math.round(percent)}%)` }));
-  if (percent >= 100) {
-    setTimeout(() => bar.classList.add('hidden'), 1500);
-  }
+  if (fill) fill.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+  if (txt) txt.textContent = `${msg} (${Math.round(pct)}%)`;
+  if (pct >= 100) setTimeout(() => bar.classList.add('hidden'), 1200);
 }
 
-// ─── 通知 ───
+// ─── トースト ───
 
-/**
- * トースト通知を表示する
- * @param {string} message - メッセージ
- * @param {'success'|'error'|'warning'|'info'} type - 通知種別
- */
 export function showNotification(message, type = 'info') {
   const area = document.getElementById('notification-area');
   if (!area) return;
-  const toast = el('div', { className: `notification notification-${type}`, textContent: message });
+  const colors = {
+    success: 'bg-emerald-600', error: 'bg-red-600',
+    warning: 'bg-amber-600', info: 'bg-primary-600',
+  };
+  const toast = document.createElement('div');
+  toast.className = `pointer-events-auto ${colors[type] || colors.info} text-white text-xs font-medium px-4 py-2.5 rounded-lg shadow-lg toast-enter max-w-xs`;
+  toast.textContent = message;
   area.appendChild(toast);
-  // 自動消去
-  setTimeout(() => {
-    toast.classList.add('fade-out');
-    setTimeout(() => toast.remove(), 300);
-  }, 3000);
+  setTimeout(() => { toast.classList.add('toast-exit'); setTimeout(() => toast.remove(), 250); }, 3000);
 }
