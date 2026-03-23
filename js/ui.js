@@ -172,6 +172,56 @@ export function renderDashboard(state, validationResult) {
   }
 
   violDiv.innerHTML = html;
+
+  // ─── 教育課程概要 ───
+  renderCurriculumOverview(state);
+}
+
+/** 教育課程概要を描画する */
+function renderCurriculumOverview(state) {
+  const el = document.getElementById('curriculum-content');
+  if (!el) return;
+  const subjects = state.subjects || [];
+  if (subjects.length === 0) { el.innerHTML = '<p class="text-xs text-gray-400">科目データをインポートしてください</p>'; return; }
+
+  // 教科ごとにグループ化
+  const byDept = new Map();
+  for (const s of subjects) {
+    const dept = s.department || '未分類';
+    if (!byDept.has(dept)) byDept.set(dept, []);
+    byDept.get(dept).push(s);
+  }
+
+  const requiredCount = subjects.filter(s => s.isRequired).length;
+  const electiveCount = subjects.filter(s => !s.isRequired).length;
+  const schoolOrigCount = subjects.filter(s => s.isSchoolOriginal).length;
+  const totalCredits = subjects.reduce((sum, s) => sum + (s.credits || 0), 0);
+
+  let h = `<div class="grid grid-cols-2 lg:grid-cols-4 gap-2 mb-3">
+    <div class="text-center p-2 bg-primary-50 rounded"><div class="text-lg font-bold text-primary-600">${subjects.length}</div><div class="text-[10px] text-gray-500">総科目数</div></div>
+    <div class="text-center p-2 bg-emerald-50 rounded"><div class="text-lg font-bold text-emerald-600">${requiredCount}</div><div class="text-[10px] text-gray-500">必履修科目</div></div>
+    <div class="text-center p-2 bg-amber-50 rounded"><div class="text-lg font-bold text-amber-600">${electiveCount}</div><div class="text-[10px] text-gray-500">選択科目</div></div>
+    <div class="text-center p-2 bg-violet-50 rounded"><div class="text-lg font-bold text-violet-600">${schoolOrigCount}</div><div class="text-[10px] text-gray-500">学校設定科目</div></div>
+  </div>`;
+
+  // 教科別の表
+  h += `<div class="overflow-x-auto"><table class="w-full text-[11px]"><thead><tr class="text-left text-gray-500 border-b">
+    <th class="py-1 px-2">教科</th><th class="py-1 px-2">科目数</th><th class="py-1 px-2">必履修</th><th class="py-1 px-2">科目一覧</th>
+  </tr></thead><tbody>`;
+  for (const [dept, subs] of byDept) {
+    const req = subs.filter(s => s.isRequired).length;
+    const names = subs.map(s => {
+      let badge = '';
+      if (s.isRequired) badge = '<span class="text-emerald-600 text-[9px]">必</span>';
+      if (s.isSchoolOriginal) badge = '<span class="text-violet-600 text-[9px]">独</span>';
+      if (s.courseRestriction) badge += `<span class="text-amber-600 text-[9px]">${s.courseRestriction}</span>`;
+      return `<span class="inline-block bg-gray-100 px-1.5 py-0.5 rounded mr-1 mb-1">${s.name}${badge ? ' '+badge : ''}</span>`;
+    }).join('');
+    h += `<tr class="border-b border-gray-100"><td class="py-1.5 px-2 font-medium">${dept}</td><td class="py-1.5 px-2">${subs.length}</td><td class="py-1.5 px-2">${req}</td><td class="py-1.5 px-2">${names}</td></tr>`;
+  }
+  h += `</tbody></table></div>`;
+
+  el.innerHTML = h;
 }
 
 // ─── 時間割グリッド ───
@@ -329,8 +379,13 @@ const MASTER_COLS = {
   ],
   subjects: [
     { key: 'name', label: '科目名' },
+    { key: 'department', label: '教科' },
+    { key: 'credits', label: '単位' },
     { key: 'hoursPerWeek', label: '週時数' },
-    { key: 'requiresSpecialRoom', label: '特別教室', fmt: v => v ? 'Yes' : '' },
+    { key: 'isRequired', label: '必履修', fmt: v => v ? '必' : '' },
+    { key: 'targetGrades', label: '対象学年', fmt: v => (v||[]).join('・') || '全' },
+    { key: 'courseRestriction', label: 'コース', fmt: v => v || '共通' },
+    { key: 'isSchoolOriginal', label: '学校設定', fmt: v => v ? '独自' : '' },
   ],
 };
 

@@ -29,8 +29,14 @@ const COLUMN_DEFS = {
   subjects: [
     { csv: 'ID', prop: 'id', aliases: ['id'] },
     { csv: '科目名', prop: 'name', aliases: ['name'] },
+    { csv: '教科', prop: 'department', aliases: ['department'] },
+    { csv: '単位数', prop: 'credits', aliases: ['credits'] },
     { csv: '週時数', prop: 'hoursPerWeek', aliases: ['hours_per_week'] },
+    { csv: '必履修', prop: 'isRequired', aliases: ['is_required'] },
+    { csv: '対象学年', prop: 'targetGrades', aliases: ['target_grades'] },
+    { csv: 'コース制限', prop: 'courseRestriction', aliases: ['course_restriction'] },
     { csv: '特別教室要否', prop: 'requiresSpecialRoom', aliases: ['requires_special_room'] },
+    { csv: '学校設定科目', prop: 'isSchoolOriginal', aliases: ['is_school_original'] },
   ],
   slots: [
     { csv: '曜日', prop: 'day', aliases: ['day'] },
@@ -243,7 +249,7 @@ export function importCSV(csvText, type, state) {
 
   // 空行やIDなしレコードを除外
   const validRecords = records.filter(r => {
-    if (type === 'slots') return r.day != null && r.period != null && r.classId;
+    if (type === 'slots') return Number.isFinite(r.day) && Number.isFinite(r.period) && r.classId;
     return r.id;
   });
 
@@ -295,8 +301,16 @@ function castRecord(record, type) {
     case 'subjects':
       return {
         ...record,
+        credits: Number(record.credits) || Number(record.hoursPerWeek) || 0,
         hoursPerWeek: Number(record.hoursPerWeek) || 0,
-        requiresSpecialRoom: record.requiresSpecialRoom === 'true' || record.requiresSpecialRoom === true
+        isRequired: record.isRequired === 'true' || record.isRequired === true,
+        targetGrades: record.targetGrades
+          ? String(record.targetGrades).split('|').map(Number).filter(n => !isNaN(n))
+          : [],
+        courseRestriction: record.courseRestriction || '',
+        requiresSpecialRoom: record.requiresSpecialRoom === 'true' || record.requiresSpecialRoom === true,
+        isSchoolOriginal: record.isSchoolOriginal === 'true' || record.isSchoolOriginal === true,
+        department: record.department || '',
       };
     case 'slots':
       return {

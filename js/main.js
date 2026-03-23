@@ -111,6 +111,20 @@ function handleCellClick(day, period) {
         if (!confirm(`${tName}は「${sName}」の担当ではありません。続行しますか？`)) return;
       }
     }
+    // コース制限チェック
+    const subj = (state.subjects || []).find(s => s.id === data.subjectId);
+    const cls = (state.classes || []).find(c => c.id === data.classId);
+    if (subj?.courseRestriction && cls?.course && cls.course !== '共通' && cls.course !== '文理混合') {
+      if (subj.courseRestriction !== cls.course) {
+        if (!confirm(`「${subj.name}」は${subj.courseRestriction}向け科目ですが、${cls.name}（${cls.course}）に配置します。続行しますか？`)) return;
+      }
+    }
+    // 対象学年チェック
+    if (subj?.targetGrades?.length > 0 && cls?.grade) {
+      if (!subj.targetGrades.includes(cls.grade)) {
+        if (!confirm(`「${subj.name}」の対象学年は${subj.targetGrades.join('・')}年ですが、${cls.name}（${cls.grade}年）に配置します。続行しますか？`)) return;
+      }
+    }
     addSlot({ day, period, ...data, slotType: data.slotType || 'single' });
     saveToLocalStorage();
     refreshTimetable();
@@ -183,7 +197,14 @@ function getEditFields(type) {
     classes: [
       { key: 'name', label: 'クラス名', placeholder: '1年1組' },
       { key: 'grade', label: '学年', type: 'number', placeholder: '1' },
-      { key: 'course', label: 'コース', placeholder: '普通' },
+      { key: 'course', label: 'コース', options: [
+        {value:'共通',label:'共通（1年など）'},
+        {value:'文系',label:'文系'},
+        {value:'理系',label:'理系'},
+        {value:'文理混合',label:'文理混合'},
+        {value:'特進',label:'特進'},
+        {value:'普通',label:'普通'},
+      ]},
     ],
     rooms: [
       { key: 'name', label: '教室名', placeholder: '1-1教室' },
@@ -192,8 +213,19 @@ function getEditFields(type) {
     ],
     subjects: [
       { key: 'name', label: '科目名', placeholder: '数学Ⅱ' },
-      { key: 'hoursPerWeek', label: '週時数', type: 'number', placeholder: '4' },
+      { key: 'department', label: '教科', placeholder: '数学', options: [
+        {value:'国語',label:'国語'},{value:'地理歴史',label:'地理歴史'},{value:'公民',label:'公民'},
+        {value:'数学',label:'数学'},{value:'理科',label:'理科'},{value:'保健体育',label:'保健体育'},
+        {value:'芸術',label:'芸術'},{value:'外国語',label:'外国語'},{value:'家庭',label:'家庭'},
+        {value:'情報',label:'情報'},{value:'総合',label:'総合的な探究'},{value:'特別活動',label:'特別活動'},
+      ]},
+      { key: 'credits', label: '単位数', type: 'number', placeholder: '2' },
+      { key: 'hoursPerWeek', label: '週時数', type: 'number', placeholder: '2' },
+      { key: 'isRequired', label: '必履修 (true/false)', placeholder: 'false' },
+      { key: 'targetGrades', label: '対象学年（カンマ区切り: 1,2,3）', placeholder: '1' },
+      { key: 'courseRestriction', label: 'コース制限（文系/理系/空=共通）', placeholder: '' },
       { key: 'requiresSpecialRoom', label: '特別教室 (true/false)', placeholder: 'false' },
+      { key: 'isSchoolOriginal', label: '学校設定科目 (true/false)', placeholder: 'false' },
     ],
   };
   return defs[type] || [];
@@ -212,8 +244,14 @@ function parseFormData(type, data) {
   if (type === 'rooms') return { ...data, capacity: Number(data.capacity) || 40 };
   if (type === 'subjects') return {
     ...data,
+    department: data.department || '',
+    credits: Number(data.credits) || Number(data.hoursPerWeek) || 1,
     hoursPerWeek: Number(data.hoursPerWeek) || 1,
+    isRequired: data.isRequired === 'true',
+    targetGrades: data.targetGrades ? data.targetGrades.split(',').map(Number).filter(n => !isNaN(n)) : [],
+    courseRestriction: data.courseRestriction || '',
     requiresSpecialRoom: data.requiresSpecialRoom === 'true',
+    isSchoolOriginal: data.isSchoolOriginal === 'true',
   };
   return data;
 }

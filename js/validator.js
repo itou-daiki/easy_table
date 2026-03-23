@@ -92,7 +92,7 @@ function checkHardConstraints(slots, teacherMap) {
 }
 
 /** ソフト制約を検証する */
-function checkSoftConstraints(slots, teacherMap, subjectMap) {
+function checkSoftConstraints(slots, teacherMap, subjectMap, state) {
   const warnings = [];
   const w = (type, message, extra = {}) => warnings.push({
     type, message, day: extra.day ?? null, period: extra.period ?? null,
@@ -136,15 +136,55 @@ function checkSoftConstraints(slots, teacherMap, subjectMap) {
     }
   }
 
-  // 科目ごとの週時数チェック
-  const subjectCount = new Map();
-  for (const s of slots) { if (s.subjectId) subjectCount.set(s.subjectId, (subjectCount.get(s.subjectId) || 0) + 1); }
-  for (const [id, count] of subjectCount) {
-    const sub = subjectMap.get(id);
-    if (sub?.hoursPerWeek != null && count !== sub.hoursPerWeek) {
-      w("週時数不一致", `科目${id}の週時数(${count})が設定値(${sub.hoursPerWeek})と一致しません`);
+  // 科目ごとの週時数チェック（クラス×科目単位）
+  const classSubjectCount = new Map();
+  for (const s of slots) {
+    if (s.subjectId && s.classId) {
+      const k = `${s.classId}|${s.subjectId}`;
+      classSubjectCount.set(k, (classSubjectCount.get(k) || 0) + 1);
     }
   }
+  for (const [key, count] of classSubjectCount) {
+    const [classId, subjectId] = key.split('|');
+    const sub = subjectMap.get(subjectId);
+    if (sub?.hoursPerWeek && count !== sub.hoursPerWeek) {
+      w("週時数不一致", `${sub.name || subjectId}（クラス${classId}）: ${count}コマ（設定: ${sub.hoursPerWeek}コマ）`, { classId });
+    }
+  }
+
+  // コース制限チェック
+  const classMap = new Map();
+  for (const c of state.classes || []) classMap.set(c.id, c);
+  for (const s of slots) {
+    const sub = subjectMap.get(s.subjectId);
+    const cls = classMap.get(s.classId);
+    if (sub?.courseRestriction && cls?.course && cls.course !== '共通' && cls.course !== '文理混合') {
+      if (sub.courseRestriction !== cls.course) {
+        w("コース不一致", `${sub.name}（${sub.courseRestriction}向け）が${cls.name}（${cls.course}）に配置`, { day: s.day, period: s.period, classId: s.classId });
+      }
+    }
+    // 対象学年チェック
+    if (sub?.targetGrades?.length > 0 && cls?.grade) {
+      if (!sub.targetGrades.includes(cls.grade)) {
+        w("学年不一致", `${sub.name}（${sub.targetGrades.join('・')}年向け）が${cls.name}（${cls.grade}年）に配置`, { day: s.day, period: s.period, classId: s.classId });
+      }
+    }
+  }
+
+  // 必履修科目チェック（クラスごと）
+  const requiredSubjects = [...subjectMap.values()].filter(s => s.isRequired);
+  for (const cls of state.classes || []) {
+    const classSlots = slots.filter(s => s.classId === cls.id);
+    const classSubjectIds = new Set(classSlots.map(s => s.subjectId));
+    for (const req of requiredSubjects) {
+      // 対象学年チェック
+      if (req.targetGrades?.length > 0 && !req.targetGrades.includes(cls.grade)) continue;
+      if (!classSubjectIds.has(req.id)) {
+        w("必履修未配置", `${cls.name}に必履修科目「${req.name}」が配置されていません`, { classId: cls.id });
+      }
+    }
+  }
+
   return warnings;
 }
 
@@ -159,7 +199,7 @@ export function validate(state) {
   const subjectMap = getSubjectMap(state);
   return {
     errors: checkHardConstraints(slots, teacherMap),
-    warnings: checkSoftConstraints(slots, teacherMap, subjectMap),
+    warnings: checkSoftConstraints(slots, teacherMap, subjectMap, state),
   };
 }
 
