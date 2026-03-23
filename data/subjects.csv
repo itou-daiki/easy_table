@@ -1,0 +1,11 @@
+ID,科目名,週時数,特別教室要否
+s01,数学Ⅱ,4,false
+s02,国語総合,4,false
+s03,英語コミュニケーション,4,false
+s04,物理,3,true
+s05,体育,3,true
+s06,日本史,3,false
+s07,音楽,2,false
+s08,情報,2,false
+s09,数学B,3,false
+s10,現代文,3,false

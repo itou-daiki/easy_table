@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>時間割作成システム</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/print.css" media="print">
+</head>
+<body>
+  <header class="no-print">
+    <h1>時間割作成システム</h1>
+    <nav>
+      <button class="tab-btn active" data-tab="timetable-section">時間割</button>
+      <button class="tab-btn" data-tab="teachers-section">教員管理</button>
+      <button class="tab-btn" data-tab="classes-section">クラス管理</button>
+      <button class="tab-btn" data-tab="rooms-section">教室管理</button>
+      <button class="tab-btn" data-tab="subjects-section">科目管理</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- Tab: 時間割 -->
+    <section id="timetable-section">
+      <div class="toolbar no-print">
+        <div class="toolbar-group">
+          <label for="view-mode">表示:</label>
+          <select id="view-mode">
+            <option value="class">クラス別</option>
+            <option value="teacher">教員別</option>
+            <option value="room">教室別</option>
+          </select>
+          <select id="entity-picker">
+            <option value="">-- 選択してください --</option>
+          </select>
+        </div>
+        <div class="toolbar-group">
+          <button id="btn-auto-place" class="btn btn-primary">自動配置</button>
+          <button id="btn-optimize" class="btn btn-primary">最適化</button>
+          <button id="btn-validate" class="btn btn-warning">制約チェック</button>
+          <button id="btn-csv-import" class="btn btn-secondary">CSVインポート</button>
+          <button id="btn-csv-export" class="btn btn-secondary">CSVエクスポート</button>
+          <button id="btn-save" class="btn btn-success">保存</button>
+        </div>
+      </div>
+
+      <div id="timetable-grid">
+        <table class="timetable">
+          <thead>
+            <tr>
+              <th class="period-header"></th>
+              <th>月曜日</th>
+              <th>火曜日</th>
+              <th>水曜日</th>
+              <th>木曜日</th>
+              <th>金曜日</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="period-label">1限<span class="period-time">8:50-9:40</span></td>
+              <td class="cell" data-day="mon" data-period="1" draggable="true"></td>
+              <td class="cell" data-day="tue" data-period="1" draggable="true"></td>
+              <td class="cell" data-day="wed" data-period="1" draggable="true"></td>
+              <td class="cell" data-day="thu" data-period="1" draggable="true"></td>
+              <td class="cell" data-day="fri" data-period="1" draggable="true"></td>
+            </tr>
+            <tr>
+              <td class="period-label">2限<span class="period-time">9:50-10:40</span></td>
+              <td class="cell" data-day="mon" data-period="2" draggable="true"></td>
+              <td class="cell" data-day="tue" data-period="2" draggable="true"></td>
+              <td class="cell" data-day="wed" data-period="2" draggable="true"></td>
+              <td class="cell" data-day="thu" data-period="2" draggable="true"></td>
+              <td class="cell" data-day="fri" data-period="2" draggable="true"></td>
+            </tr>
+            <tr>
+              <td class="period-label">3限<span class="period-time">10:50-11:40</span></td>
+              <td class="cell" data-day="mon" data-period="3" draggable="true"></td>
+              <td class="cell" data-day="tue" data-period="3" draggable="true"></td>
+              <td class="cell" data-day="wed" data-period="3" draggable="true"></td>
+              <td class="cell" data-day="thu" data-period="3" draggable="true"></td>
+              <td class="cell" data-day="fri" data-period="3" draggable="true"></td>
+            </tr>
+            <tr>
+              <td class="period-label">4限<span class="period-time">11:50-12:40</span></td>
+              <td class="cell" data-day="mon" data-period="4" draggable="true"></td>
+              <td class="cell" data-day="tue" data-period="4" draggable="true"></td>
+              <td class="cell" data-day="wed" data-period="4" draggable="true"></td>
+              <td class="cell" data-day="thu" data-period="4" draggable="true"></td>
+              <td class="cell" data-day="fri" data-period="4" draggable="true"></td>
+            </tr>
+            <tr>
+              <td class="period-label lunch-label">昼休み<span class="period-time">12:40-13:30</span></td>
+              <td class="lunch" colspan="5">昼休み</td>
+            </tr>
+            <tr>
+              <td class="period-label">5限<span class="period-time">13:30-14:20</span></td>
+              <td class="cell" data-day="mon" data-period="5" draggable="true"></td>
+              <td class="cell" data-day="tue" data-period="5" draggable="true"></td>
+              <td class="cell" data-day="wed" data-period="5" draggable="true"></td>
+              <td class="cell" data-day="thu" data-period="5" draggable="true"></td>
+              <td class="cell" data-day="fri" data-period="5" draggable="true"></td>
+            </tr>
+            <tr>
+              <td class="period-label">6限<span class="period-time">14:30-15:20</span></td>
+              <td class="cell" data-day="mon" data-period="6" draggable="true"></td>
+              <td class="cell" data-day="tue" data-period="6" draggable="true"></td>
+              <td class="cell" data-day="wed" data-period="6" draggable="true"></td>
+              <td class="cell" data-day="thu" data-period="6" draggable="true"></td>
+              <td class="cell" data-day="fri" data-period="6" draggable="true"></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div id="validation-results"></div>
+    </section>
+
+    <!-- Tab: 教員管理 -->
+    <section id="teachers-section" hidden>
+      <div class="section-header no-print">
+        <h2>教員一覧</h2>
+        <button class="btn btn-primary" id="btn-add-teacher">教員を追加</button>
+      </div>
+      <div id="teachers-table">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>教員名</th>
+              <th>担当科目</th>
+              <th>勤務可能曜日</th>
+              <th>最大コマ数/日</th>
+              <th>備考</th>
+              <th class="no-print">操作</th>
+            </tr>
+          </thead>
+          <tbody id="teachers-tbody"></tbody>
+        </table>
+      </div>
+      <div id="teacher-form" class="no-print"></div>
+    </section>
+
+    <!-- Tab: クラス管理 -->
+    <section id="classes-section" hidden>
+      <div class="section-header no-print">
+        <h2>クラス一覧</h2>
+        <button class="btn btn-primary" id="btn-add-class">クラスを追加</button>
+      </div>
+      <div id="classes-table">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>クラス名</th>
+              <th>学年</th>
+              <th>生徒数</th>
+              <th>担任</th>
+              <th>備考</th>
+              <th class="no-print">操作</th>
+            </tr>
+          </thead>
+          <tbody id="classes-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Tab: 教室管理 -->
+    <section id="rooms-section" hidden>
+      <div class="section-header no-print">
+        <h2>教室一覧</h2>
+        <button class="btn btn-primary" id="btn-add-room">教室を追加</button>
+      </div>
+      <div id="rooms-table">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>教室名</th>
+              <th>種別</th>
+              <th>定員</th>
+              <th>設備</th>
+              <th>備考</th>
+              <th class="no-print">操作</th>
+            </tr>
+          </thead>
+          <tbody id="rooms-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Tab: 科目管理 -->
+    <section id="subjects-section" hidden>
+      <div class="section-header no-print">
+        <h2>科目一覧</h2>
+        <button class="btn btn-primary" id="btn-add-subject">科目を追加</button>
+      </div>
+      <div id="subjects-table">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>科目名</th>
+              <th>略称</th>
+              <th>必要コマ数/週</th>
+              <th>必要教室種別</th>
+              <th>色</th>
+              <th class="no-print">操作</th>
+            </tr>
+          </thead>
+          <tbody id="subjects-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Modal for editing -->
+  <div id="modal-overlay" class="no-print" hidden>
+    <div id="modal-content">
+      <div class="modal-header">
+        <h3 id="modal-title"></h3>
+        <button class="modal-close" id="btn-modal-close" aria-label="閉じる">&times;</button>
+      </div>
+      <div id="modal-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-modal-cancel">キャンセル</button>
+        <button class="btn btn-primary" id="btn-modal-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Progress bar for scheduler -->
+  <div id="progress-bar" class="no-print" hidden>
+    <div id="progress-fill"></div>
+    <span id="progress-text">処理中...</span>
+  </div>
+
+  <!-- Toast notifications -->
+  <div id="notification-area"></div>
+
+  <!-- Hidden file input for CSV import -->
+  <input type="file" id="csv-file-input" accept=".csv" hidden>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
