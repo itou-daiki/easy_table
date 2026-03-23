@@ -29,7 +29,28 @@ function createInitialState() {
       yearLabel: '',             // 年度ラベル（例: 2025年度）
     },
     // 教育課程テンプレート（クラス×科目の割り当て定義）
-    curriculumMap: [],  // [{ classId, subjectId, teacherId, roomId, hoursPerWeek }]
+    curriculumMap: [],
+    // 制約設定（各制約のON/OFF・ハード/ソフト切替）
+    constraints: {
+      // ハード制約
+      teacherConflict:    { enabled: true, level: 'hard', label: '教員重複チェック' },
+      roomConflict:       { enabled: true, level: 'hard', label: '教室重複チェック' },
+      sameDaySubject:     { enabled: true, level: 'hard', label: '同日同科目重複チェック' },
+      teacherAvailDay:    { enabled: true, level: 'hard', label: '教員出勤日チェック' },
+      teacherAvailPeriod: { enabled: true, level: 'hard', label: '教員授業不可時限チェック' },
+      classConflict:      { enabled: true, level: 'hard', label: 'クラス重複チェック' },
+      // ソフト制約
+      maxPeriodsPerDay:   { enabled: true, level: 'soft', label: '教員1日コマ数上限' },
+      maxConsecutive:     { enabled: true, level: 'soft', label: '教員連続コマ数上限' },
+      weeklyHours:        { enabled: true, level: 'soft', label: '科目週時数チェック' },
+      courseRestriction:  { enabled: true, level: 'soft', label: 'コース制限チェック' },
+      gradeRestriction:   { enabled: true, level: 'soft', label: '対象学年チェック' },
+      requiredSubjects:   { enabled: true, level: 'soft', label: '必履修科目チェック' },
+    },
+    // カスタム制約（ユーザー定義）
+    customConstraints: [],
+    // [{ id, label, type: 'avoid_period'|'require_consecutive'|'avoid_day'|'max_per_day',
+    //    target: { subjectId?, teacherId?, classId? }, params: {...}, enabled: true }]
   };
 }
 

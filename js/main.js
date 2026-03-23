@@ -657,7 +657,127 @@ document.addEventListener('DOMContentLoaded', () => {
     showNotification('設定を保存しました', 'success');
   });
 
+  // 制約設定のレンダリング
+  renderConstraintSettings();
+
+  document.getElementById('btn-add-constraint')?.addEventListener('click', () => {
+    const state = getState();
+    const subjectOpts = (state.subjects || []).map(s => ({ value: s.id, label: s.name }));
+    const teacherOpts = (state.teachers || []).map(t => ({ value: t.id, label: t.name }));
+    showEditModal('カスタム制約を追加', [
+      { key: 'label', label: '制約名', placeholder: '体育は午前に配置' },
+      { key: 'type', label: '種類', options: [
+        { value: 'avoid_period', label: '特定時限を避ける' },
+        { value: 'require_consecutive', label: '連続コマを要求' },
+        { value: 'max_subject_per_day', label: '1日の科目コマ数上限' },
+        { value: 'prefer_period', label: '特定時限に配置推奨' },
+      ]},
+      { key: 'level', label: 'レベル', options: [
+        { value: 'soft', label: '警告（ソフト制約）' },
+        { value: 'hard', label: 'エラー（ハード制約）' },
+      ]},
+      { key: 'subjectId', label: '対象科目', options: subjectOpts },
+      { key: 'day', label: '曜日（空欄=全曜日）', options: [
+        {value:'',label:'全曜日'},{value:'0',label:'月'},{value:'1',label:'火'},
+        {value:'2',label:'水'},{value:'3',label:'木'},{value:'4',label:'金'},
+      ]},
+      { key: 'period', label: '時限（空欄=全時限、0始まり）', placeholder: '' },
+      { key: 'max', label: '上限値（max_subject_per_day用）', type: 'number', placeholder: '1' },
+    ], { level: 'soft' }, data => {
+      const s = getState();
+      if (!s.customConstraints) s.customConstraints = [];
+      const params = { subjectId: data.subjectId || undefined };
+      if (data.day !== '') params.day = Number(data.day);
+      if (data.period !== '') params.period = Number(data.period);
+      if (data.max) params.max = Number(data.max);
+      if (data.type === 'prefer_period' && data.period !== '') {
+        params.preferredPeriods = data.period.split(',').map(Number).filter(n => !isNaN(n));
+      }
+      s.customConstraints.push({
+        id: crypto.randomUUID(), label: data.label || 'カスタム制約',
+        type: data.type, level: data.level || 'soft', params, enabled: true,
+      });
+      setState(s); saveToLocalStorage();
+      renderConstraintSettings();
+      showNotification('カスタム制約を追加しました', 'success');
+    });
+  });
+
   // 初期描画
   viewId = populateEntityPicker(getState(), viewMode);
   navigateTo('dashboard');
 });
+
+/** 制約設定UIをレンダリング */
+function renderConstraintSettings() {
+  const state = getState();
+  const con = state.constraints || {};
+  const container = document.getElementById('constraint-settings');
+  if (!container) return;
+
+  let html = '';
+  for (const [key, c] of Object.entries(con)) {
+    const checked = c.enabled !== false ? 'checked' : '';
+    const isHard = c.level === 'hard';
+    html += `<div class="flex items-center gap-2 py-1">
+      <input type="checkbox" ${checked} data-con-key="${key}" class="con-toggle accent-primary-500">
+      <span class="text-xs flex-1 ${c.enabled !== false ? 'text-gray-700' : 'text-gray-400'}">${c.label}</span>
+      <select data-con-key="${key}" class="con-level text-[10px] border border-gray-200 rounded px-1.5 py-0.5 bg-white">
+        <option value="hard" ${isHard ? 'selected' : ''}>エラー</option>
+        <option value="soft" ${!isHard ? 'selected' : ''}>警告</option>
+      </select>
+    </div>`;
+  }
+  container.innerHTML = html;
+
+  // イベント：ON/OFF切り替え
+  container.querySelectorAll('.con-toggle').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const s = getState();
+      const key = cb.dataset.conKey;
+      if (s.constraints?.[key]) { s.constraints[key].enabled = cb.checked; setState(s); saveToLocalStorage(); }
+    });
+  });
+  // イベント：レベル切り替え
+  container.querySelectorAll('.con-level').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const s = getState();
+      const key = sel.dataset.conKey;
+      if (s.constraints?.[key]) { s.constraints[key].level = sel.value; setState(s); saveToLocalStorage(); }
+    });
+  });
+
+  // カスタム制約リスト
+  const customList = document.getElementById('custom-constraints-list');
+  if (customList) {
+    const customs = state.customConstraints || [];
+    if (customs.length === 0) {
+      customList.innerHTML = '<p class="text-[10px] text-gray-400">カスタム制約はありません</p>';
+    } else {
+      customList.innerHTML = customs.map(cc => `
+        <div class="flex items-center gap-2 py-1">
+          <input type="checkbox" ${cc.enabled ? 'checked' : ''} data-cc-id="${cc.id}" class="cc-toggle accent-primary-500">
+          <span class="text-xs flex-1">${cc.label}</span>
+          <span class="text-[9px] px-1.5 py-0.5 rounded ${cc.level === 'hard' ? 'bg-red-50 text-red-600' : 'bg-amber-50 text-amber-600'}">${cc.level === 'hard' ? 'エラー' : '警告'}</span>
+          <button data-cc-id="${cc.id}" class="cc-del text-[10px] text-red-400 hover:text-red-600">削除</button>
+        </div>`).join('');
+      // カスタム制約のON/OFF
+      customList.querySelectorAll('.cc-toggle').forEach(cb => {
+        cb.addEventListener('change', () => {
+          const s = getState();
+          const cc = (s.customConstraints || []).find(c => c.id === cb.dataset.ccId);
+          if (cc) { cc.enabled = cb.checked; setState(s); saveToLocalStorage(); }
+        });
+      });
+      // カスタム制約の削除
+      customList.querySelectorAll('.cc-del').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const s = getState();
+          s.customConstraints = (s.customConstraints || []).filter(c => c.id !== btn.dataset.ccId);
+          setState(s); saveToLocalStorage(); renderConstraintSettings();
+          showNotification('カスタム制約を削除しました', 'info');
+        });
+      });
+    }
+  }
+}
