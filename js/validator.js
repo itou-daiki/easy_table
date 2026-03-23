@@ -128,11 +128,14 @@ export function validate(state) {
     }
   }
 
-  // 6. クラス重複
+  // 6. クラス重複（選択同時開講グループは除外）
   if (isEnabled(con, 'classConflict')) {
     const g = groupBy(slots, s => s.classId ? `${s.classId}|${s.day}|${s.period}` : null);
     for (const [, arr] of g) {
       if (arr.length > 1) {
+        // 全コマが同じ選択グループに属していれば重複ではない
+        const groupIds = arr.map(s => s.electiveGroupId).filter(Boolean);
+        if (groupIds.length === arr.length && new Set(groupIds).size === 1) continue;
         const s = arr[0];
         const clsName = classMap.get(s.classId)?.name || s.classId;
         push('classConflict', 'hard', 'クラス重複', `${clsName}が${dp(s.day, s.period)}に複数配置`, s);
@@ -365,8 +368,37 @@ export function validateSlotPlacement(state, slot) {
       e('授業不可時限', `${t.name || slot.teacherId}は${dp(slot.day, slot.period)}が授業不可`);
     }
   }
-  if (isEnabled(con, 'classConflict') && slot.classId && existing.some(s => s.day === slot.day && s.period === slot.period && s.classId === slot.classId)) {
-    e('クラス重複', `このクラスは${dp(slot.day, slot.period)}に既に配置`);
+  if (isEnabled(con, 'classConflict') && slot.classId) {
+    const conflicting = existing.filter(s => s.day === slot.day && s.period === slot.period && s.classId === slot.classId);
+    // 選択グループが同じなら重複ではない
+    const isElectiveOk = slot.electiveGroupId && conflicting.every(s => s.electiveGroupId === slot.electiveGroupId);
+    if (conflicting.length > 0 && !isElectiveOk) {
+      e('クラス重複', `このクラスは${dp(slot.day, slot.period)}に既に配置`);
+    }
   }
+
+  // カスタム制約（ハードレベルのみ配置時にチェック）
+  for (const cc of state.customConstraints || []) {
+    if (!cc.enabled || cc.level !== 'hard') continue;
+    const p = cc.params || {};
+    if (cc.type === 'avoid_period') {
+      if (p.subjectId && p.subjectId !== slot.subjectId) continue;
+      if (p.teacherId && p.teacherId !== slot.teacherId) continue;
+      const dayOk = p.day == null || p.day === slot.day;
+      const periodOk = p.period == null || p.period === slot.period;
+      if (dayOk && periodOk) {
+        e(cc.label || 'カスタム制約', `カスタム制約「${cc.label}」に違反`);
+      }
+    } else if (cc.type === 'max_subject_per_day') {
+      if (p.subjectId && p.subjectId !== slot.subjectId) continue;
+      if (p.max) {
+        const dayCount = existing.filter(s => s.classId === slot.classId && s.subjectId === slot.subjectId && s.day === slot.day).length;
+        if (dayCount >= p.max) {
+          e(cc.label || 'カスタム制約', `${dp(slot.day, slot.period)}: 1日${p.max}コマ上限を超過`);
+        }
+      }
+    }
+  }
+
   return { valid: errors.length === 0, errors };
 }

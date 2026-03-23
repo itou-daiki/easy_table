@@ -130,7 +130,9 @@ function makeSlot(ts, lesson) {
  * - 同じ教員のコマが少ない曜日を優先
  * - 午前の早い時限を少し優先（実際の学校の傾向）
  */
-function scoreCandidates(candidates, lesson, currentSlots) {
+function scoreCandidates(candidates, lesson, currentSlots, state) {
+  const customConstraints = state?.customConstraints || [];
+
   const scores = candidates.map(ts => {
     let score = 0;
     // この曜日にこのクラス・科目が既にあれば減点（分散促進）
@@ -144,6 +146,31 @@ function scoreCandidates(candidates, lesson, currentSlots) {
     score -= classDayLoad * 5;
     // 午前時限（0-3）を少し優先
     if (ts.period < 4) score += 2;
+
+    // カスタム制約を反映
+    for (const cc of customConstraints) {
+      if (!cc.enabled) continue;
+      const p = cc.params || {};
+      if (cc.type === 'avoid_period') {
+        // この枠が回避対象なら大幅減点
+        if (p.subjectId && p.subjectId !== lesson.subjectId) continue;
+        if (p.teacherId && p.teacherId !== lesson.teacherId) continue;
+        const dayMatch = p.day == null || p.day === ts.day;
+        const periodMatch = p.period == null || p.period === ts.period;
+        if (dayMatch && periodMatch) score -= (cc.level === 'hard' ? 500 : 50);
+      } else if (cc.type === 'prefer_period') {
+        // 推奨時限ならボーナス
+        if (p.subjectId && p.subjectId !== lesson.subjectId) continue;
+        if (p.preferredPeriods?.includes(ts.period)) score += 30;
+        else score -= 15;
+      } else if (cc.type === 'max_subject_per_day') {
+        // 1日上限に近づいている曜日は減点
+        if (p.subjectId && p.subjectId !== lesson.subjectId) continue;
+        const dayCount = currentSlots.filter(s => s.classId === lesson.classId && s.subjectId === lesson.subjectId && s.day === ts.day).length;
+        if (p.max && dayCount >= p.max) score -= 200;
+      }
+    }
+
     // ランダムノイズ（同点回避）
     score += Math.random() * 3;
     return { ts, score };
@@ -161,7 +188,7 @@ function greedyPlace(state, lessons, timeSlots, onProgress, totalHours) {
     for (let h = 0; h < hours; h++) {
       const valid = timeSlots.filter(ts => validateSlotPlacement(result, makeSlot(ts, lesson)).valid);
       if (valid.length > 0) {
-        const ranked = scoreCandidates(valid, lesson, result.slots);
+        const ranked = scoreCandidates(valid, lesson, result.slots, state);
         result.slots.push(makeSlot(ranked[0], lesson));
         placed++;
       } else {

@@ -407,7 +407,9 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
         continue;
       }
 
-      const slot = slots.find(s => s.day === d && s.period === p);
+      // 同じ (day, period) に複数コマがある場合（選択同時開講）
+      const cellSlots = slots.filter(s => s.day === d && s.period === p);
+      const slot = cellSlots[0]; // 代表スロット（ドラッグ等で使用）
       td.className = `tt-cell border border-gray-200 p-1 align-top cursor-pointer transition-all duration-100 ${cellH} relative overflow-hidden`;
       td.dataset.day = d; td.dataset.period = p;
 
@@ -416,7 +418,21 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
       if (validationMap?.[vKey] === 'error') td.classList.add('cell-error');
       else if (validationMap?.[vKey] === 'warning') td.classList.add('cell-warning');
 
-      if (slot) {
+      if (cellSlots.length > 1) {
+        // 選択同時開講: 複数科目を1セルに表示
+        td.draggable = false;
+        const items = cellSlots.map(s => {
+          const colorCls = subjColorClass(state.subjects, s.subjectId);
+          return `<div class="rounded px-1 py-0.5 ${colorCls} mb-px"><span class="text-[9px] font-bold text-gray-800 truncate block">${nameById(state.subjects, s.subjectId)}</span><span class="text-[7px] text-gray-500">${nameById(state.teachers, s.teacherId)}</span></div>`;
+        }).join('');
+        td.innerHTML = items;
+        td.title = cellSlots.map(s => `${nameById(state.subjects, s.subjectId)} / ${nameById(state.teachers, s.teacherId)}`).join('\n');
+        // クリック時は最初のスロットを編集対象
+        td.addEventListener('click', e => {
+          if (e.defaultPrevented) return;
+          onCellEdit?.(d, p, slot);
+        });
+      } else if (slot) {
         td.draggable = true;
         const colorCls = subjColorClass(state.subjects, slot.subjectId);
         const sName = nameById(state.subjects, slot.subjectId);
@@ -443,9 +459,10 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
           dragData = { day: d, period: p, slot: { ...s } };
           e.dataTransfer.effectAllowed = 'move';
           td.classList.add('dragging');
-          // 空セル（コマ情報なし）をハイライト
+          // 移動先候補をハイライト（自身と同曜日以外で空いているセル）
           tbody.querySelectorAll('.tt-cell').forEach(c => {
-            if (!c.querySelector('[class*="subj-"]') && c !== td) c.classList.add('candidate');
+            if (c === td || c.classList.contains('bg-gray-100')) return; // グレーアウト除外
+            c.classList.add('candidate');
           });
         });
         td.addEventListener('dragend', () => {
@@ -461,15 +478,21 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
         td.addEventListener('click', () => onCellClick?.(d, p));
       }
 
-      // ドロップ対象
-      td.addEventListener('dragover', e => { e.preventDefault(); td.classList.add('drag-over'); });
-      td.addEventListener('dragleave', () => td.classList.remove('drag-over'));
-      td.addEventListener('drop', e => {
-        e.preventDefault(); td.classList.remove('drag-over');
-        if (!dragData || !onSlotMove) return;
-        onSlotMove({ day: dragData.day, period: dragData.period }, { day: d, period: p }, dragData.slot);
-        dragData = null;
-      });
+      // ドロップ対象（グレーアウトセルはドロップ不可）
+      if (p < dayPeriods) {
+        td.addEventListener('dragover', e => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          td.classList.add('drag-over');
+        });
+        td.addEventListener('dragleave', () => td.classList.remove('drag-over'));
+        td.addEventListener('drop', e => {
+          e.preventDefault(); td.classList.remove('drag-over');
+          if (!dragData || !onSlotMove) return;
+          onSlotMove({ day: dragData.day, period: dragData.period }, { day: d, period: p }, dragData.slot);
+          dragData = null;
+        });
+      }
       row.appendChild(td);
     }
     tbody.appendChild(row);

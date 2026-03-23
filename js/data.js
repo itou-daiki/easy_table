@@ -48,6 +48,7 @@ const COLUMN_DEFS = {
     { csv: '教員ID', prop: 'teacherId', aliases: ['teacher_id'] },
     { csv: '教室ID', prop: 'roomId', aliases: ['room_id'] },
     { csv: 'コマ種別', prop: 'slotType', aliases: ['slot_type'] },
+    { csv: '選択グループ', prop: 'electiveGroupId', aliases: ['elective_group_id', 'elective_group'] },
   ],
 };
 
@@ -473,7 +474,8 @@ function castRecord(record, type) {
       return {
         ...record,
         day: Number(record.day),
-        period: Number(record.period)
+        period: Number(record.period),
+        electiveGroupId: record.electiveGroupId || '',
       };
     default:
       return record;

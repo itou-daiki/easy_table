@@ -8,7 +8,7 @@ import {
   undo, redo,
 } from './store.js';
 import { importCSV, exportMastersCSV, exportSlotsCSV, exportExcel, importExcel, downloadTemplate } from './data.js';
-import { validate } from './validator.js';
+import { validate, validateSlotPlacement } from './validator.js';
 import { autoSchedule, optimizeExisting } from './scheduler.js';
 import {
   populateEntityPicker, renderDashboard, renderTimetableGrid,
@@ -61,11 +61,26 @@ function runValidation() {
 // ─── スロット操作 ───
 
 function handleSlotMove(from, to, slot) {
+  // 同じ位置なら何もしない
+  if (from.day === to.day && from.period === to.period) return;
+
+  // 移動先で制約違反がないかチェック
+  const state = getState();
+  const testSlot = { ...slot, day: to.day, period: to.period };
+  // 一時的に元のスロットを除去した状態でチェック
+  const tempState = { ...state, slots: state.slots.filter(s => !(s.day === from.day && s.period === from.period && s.classId === slot.classId)) };
+  const { valid, errors } = validateSlotPlacement(tempState, testSlot);
+
+  if (!valid) {
+    const msgs = errors.map(e => e.message).join('\n');
+    if (!confirm(`移動先に制約違反があります:\n${msgs}\n\nそれでも移動しますか？`)) return;
+  }
+
   removeSlot(from.day, from.period, slot.classId);
-  addSlot({ ...slot, day: to.day, period: to.period });
+  addSlot(testSlot);
   saveToLocalStorage();
   runValidation();
-  showNotification('コマを移動しました', 'success');
+  showNotification(valid ? 'コマを移動しました' : 'コマを移動しました（制約違反あり）', valid ? 'success' : 'warning');
 }
 
 function handleCellClick(day, period) {
@@ -97,6 +112,7 @@ function handleCellClick(day, period) {
     { key: 'teacherId', label: '教員', options: teacherOpts },
     { key: 'roomId', label: '教室', options: roomOpts },
     { key: 'slotType', label: 'コマ種別', options: typeOpts },
+    { key: 'electiveGroupId', label: '選択グループID（選択科目の同時開講用・空欄可）', placeholder: '例: EG-地歴2年' },
   ];
   showEditModal(`コマを追加 (${['月','火','水','木','金'][day]}曜 ${period+1}限)`, fields, {
     ...defaults, slotType: 'single',
@@ -153,6 +169,7 @@ function handleCellEdit(day, period, slot) {
     { key: 'teacherId', label: '教員', options: teacherOpts },
     { key: 'roomId', label: '教室', options: roomOpts },
     { key: 'slotType', label: 'コマ種別', options: typeOpts },
+    { key: 'electiveGroupId', label: '選択グループID', placeholder: '例: EG-地歴2年' },
   ];
 
   showEditModal(`コマ編集 (${dayName}曜 ${period+1}限)`, fields, slot, data => {
@@ -161,6 +178,7 @@ function handleCellEdit(day, period, slot) {
       teacherId: data.teacherId || slot.teacherId,
       roomId: data.roomId || slot.roomId,
       slotType: data.slotType || slot.slotType,
+      electiveGroupId: data.electiveGroupId ?? slot.electiveGroupId ?? '',
     });
     saveToLocalStorage();
     refreshTimetable();
