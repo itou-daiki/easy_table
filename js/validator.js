@@ -79,6 +79,18 @@ function checkHardConstraints(slots, teacherMap) {
     }
   }
 
+  // 4.5 授業不可時限チェック
+  for (const s of slots) {
+    if (!s.teacherId) continue;
+    const t = teacherMap.get(s.teacherId);
+    if (t?.unavailablePeriods?.length > 0) {
+      const blocked = t.unavailablePeriods.some(up => up.day === s.day && up.period === s.period);
+      if (blocked) {
+        errors.push(err("授業不可時限", `教員${t?.name || s.teacherId}は${['月','火','水','木','金'][s.day]}曜${s.period + 1}限が授業不可です`, s));
+      }
+    }
+  }
+
   // 5. クラスの同時限重複（同じクラスが同時に2つの授業）
   const byClassTime = groupBy(slots, s => s.classId ? `${s.classId}|${s.day}|${s.period}` : null);
   for (const [, g] of byClassTime) {
@@ -233,6 +245,16 @@ export function validateSlotPlacement(state, slot) {
     if (t?.availableDays && !t.availableDays.includes(slot.day)) {
       e("出勤日外", `教員${slot.teacherId}は${slot.day}曜が出勤日ではありません`);
     }
+  }
+  // 授業不可時限チェック
+  if (slot.teacherId) {
+      const t = teacherMap.get(slot.teacherId);
+      if (t?.unavailablePeriods?.length > 0) {
+        const blocked = t.unavailablePeriods.some(up => up.day === slot.day && up.period === slot.period);
+        if (blocked) {
+          e("授業不可時限", `教員${t?.name || slot.teacherId}は${['月','火','水','木','金'][slot.day]}曜${slot.period + 1}限が授業不可です`);
+        }
+      }
   }
   return { valid: errors.length === 0, errors };
 }

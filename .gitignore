@@ -1,0 +1,6 @@
+# Claude Code プラグイン（デプロイ不要）
+everything-claude-code/
+
+# OS files
+.DS_Store
+Thumbs.db

@@ -5,6 +5,8 @@
 
 const DAY_LABELS = ['月', '火', '水', '木', '金', '土'];
 
+let sortState = { type: '', key: '', asc: true };
+
 /** metaから時限時刻を動的に計算 */
 function calcPeriodTimes(meta) {
   const pm = meta?.periodMinutes || 50;
@@ -65,14 +67,14 @@ export function renderDashboard(state, validationResult) {
   const warnCount = validationResult?.warnings?.length || 0;
 
   const items = [
-    { label: '教員', count: state.teachers?.length || 0, icon: '◉', accent: 'text-primary-600' },
-    { label: 'クラス', count: state.classes?.length || 0, icon: '◎', accent: 'text-emerald-600' },
-    { label: '教室', count: state.rooms?.length || 0, icon: '□', accent: 'text-amber-600' },
-    { label: '配置率', count: `${pct}%`, icon: '▦', accent: 'text-violet-600' },
+    { label: '教員', count: state.teachers?.length || 0, icon: '◉', accent: 'text-primary-600', page: 'teachers' },
+    { label: 'クラス', count: state.classes?.length || 0, icon: '◎', accent: 'text-emerald-600', page: 'classes' },
+    { label: '教室', count: state.rooms?.length || 0, icon: '□', accent: 'text-amber-600', page: 'rooms' },
+    { label: '配置率', count: `${pct}%`, icon: '▦', accent: 'text-violet-600', page: 'timetable' },
   ];
   const hasData = items.some(s => s.count > 0);
   stats.innerHTML = items.map(s => `
-    <div class="bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors">
+    <div class="bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors cursor-pointer" data-page="${s.page}">
       <div class="flex items-center justify-between mb-1">
         <span class="text-[10px] font-medium text-gray-400 uppercase tracking-wider">${s.label}</span>
         <span class="text-gray-300 text-xs">${s.icon}</span>
@@ -519,13 +521,35 @@ export function renderMasterTable(state, type, searchQuery, onEdit, onDelete) {
   const hr = document.createElement('tr');
   for (const c of cols) {
     const th = document.createElement('th');
-    th.className = 'text-left text-[11px] font-semibold text-gray-500 bg-gray-50 px-4 py-2.5 border-b border-gray-200';
-    th.textContent = c.label;
+    th.className = 'text-left text-[11px] font-semibold text-gray-500 bg-gray-50 px-4 py-2.5 border-b border-gray-200 cursor-pointer hover:bg-gray-100 select-none';
+    const arrow = (sortState.type === type && sortState.key === c.key) ? (sortState.asc ? ' ↑' : ' ↓') : '';
+    th.textContent = c.label + arrow;
+    th.addEventListener('click', () => {
+      if (sortState.type === type && sortState.key === c.key) {
+        sortState.asc = !sortState.asc;
+      } else {
+        sortState = { type, key: c.key, asc: true };
+      }
+      // Re-render: we need to call the function again
+      // Store onEdit and onDelete in module scope or pass through
+      renderMasterTable(state, type, searchQuery, onEdit, onDelete);
+    });
     hr.appendChild(th);
   }
   hr.innerHTML += '<th class="text-right text-[11px] font-semibold text-gray-500 bg-gray-50 px-4 py-2.5 border-b border-gray-200 no-print">操作</th>';
   thead.appendChild(hr);
   tbl.appendChild(thead);
+
+  // ソート
+  if (sortState.type === type && sortState.key) {
+    const key = sortState.key;
+    records = [...records].sort((a, b) => {
+      const va = a[key] ?? '';
+      const vb = b[key] ?? '';
+      const cmp = typeof va === 'number' ? va - vb : String(va).localeCompare(String(vb), 'ja');
+      return sortState.asc ? cmp : -cmp;
+    });
+  }
 
   // ボディ
   const tbody = document.createElement('tbody');
@@ -719,11 +743,27 @@ export function showValidationResults(errors, warnings) {
     el.innerHTML = '<div class="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2">制約違反はありません</div>';
     return {};
   }
-  el.innerHTML = `<div class="space-y-1.5">${items.map(i =>
-    `<div class="text-xs px-3 py-1.5 rounded-lg border ${
+  el.innerHTML = `<div class="space-y-1.5">${items.map(i => {
+    const dayAttr = i.day != null ? ` data-day="${i.day}"` : '';
+    const periodAttr = i.period != null ? ` data-period="${i.period}"` : '';
+    const clickable = (i.day != null && i.period != null) ? ' cursor-pointer hover:opacity-80' : '';
+    return `<div class="text-xs px-3 py-1.5 rounded-lg border${clickable} ${
       i.lv === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-700'
-    }">[${i.type}] ${i.message}</div>`
-  ).join('')}</div>`;
+    }"${dayAttr}${periodAttr}>[${i.type}] ${i.message}</div>`;
+  }).join('')}</div>`;
+
+  el.addEventListener('click', e => {
+    const item = e.target.closest('[data-day][data-period]');
+    if (!item) return;
+    const day = item.dataset.day;
+    const period = item.dataset.period;
+    const cell = document.querySelector(`.tt-cell[data-day="${day}"][data-period="${period}"]`);
+    if (cell) {
+      cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      cell.classList.add('ring-2', 'ring-primary-500', 'ring-offset-1');
+      setTimeout(() => cell.classList.remove('ring-2', 'ring-primary-500', 'ring-offset-1'), 2000);
+    }
+  });
 
   const map = {};
   for (const i of items) {

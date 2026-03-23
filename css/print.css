@@ -1,63 +1,101 @@
 @media print {
-  .no-print { display: none !important; }
-  @page { size: A4 landscape; margin: 12mm 10mm; }
-  body { background: #fff; color: #000; font-size: 10pt; line-height: 1.4; }
-  #app { display: block; }
-  main { padding: 0; max-width: 100%; }
-
-  /* ページタイトルを表示 */
-  #page-title {
-    display: block !important;
-    font-size: 14pt; font-weight: bold;
-    margin-bottom: 8px; padding-bottom: 4px;
-    border-bottom: 2px solid #333;
-  }
-  #page-title::after {
-    content: " — " attr(data-date);
-    font-size: 9pt; font-weight: normal; color: #666;
-  }
-
-  /* 時間割テーブル */
-  #timetable-grid table {
-    width: 100%; border-collapse: collapse; box-shadow: none;
-    border: 2px solid #333; page-break-inside: avoid;
-  }
-  #timetable-grid th {
-    background: #eee !important; color: #000 !important;
-    border: 1px solid #999; padding: 5px; font-size: 9pt;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-  }
-  #timetable-grid td { border: 1px solid #bbb; padding: 3px; }
-  .tt-cell { min-height: auto !important; height: auto !important; box-shadow: none !important; }
-  .tt-cell.cell-error, .tt-cell.cell-warning { box-shadow: none !important; background: transparent !important; }
-
-  /* 科目色は印刷時に薄く保持（読みやすさのため） */
-  [class*="subj-"] {
-    background: #f5f5f5 !important; border-left: 2px solid #999 !important;
-    -webkit-print-color-adjust: exact; print-color-adjust: exact;
-  }
-  .tt-cell .text-\[11px\] { font-size: 9pt !important; }
-  .tt-cell .text-\[9px\] { font-size: 7pt !important; }
-  .tt-cell .text-\[8px\] { font-size: 6.5pt !important; }
-
-  /* マスターテーブル */
-  table.data-tbl { box-shadow: none; border: 1px solid #999; page-break-inside: auto; }
-  table.data-tbl th { background: #eee !important; print-color-adjust: exact; font-size: 8pt; padding: 4px 6px; }
-  table.data-tbl td { font-size: 8pt; padding: 3px 6px; border-bottom: 1px solid #ccc; }
-  table.data-tbl tr { page-break-inside: avoid; }
-
-  /* 非表示要素 */
-  #modal-overlay, #progress-bar, #notification-area, #csv-file-input,
+  .no-print, #modal-overlay, #progress-bar, #notification-area, #csv-file-input,
   #sidebar, #sidebar-overlay, header, #validation-results,
   #save-indicator, .view-tab, #entity-picker,
   [id^="search-"], [id^="btn-add-"], [id^="btn-auto"],
-  [id^="btn-optim"], [id^="btn-valid"], #btn-print { display: none !important; }
-
-  /* ビュータブとセレクターを隠す */
+  [id^="btn-optim"], [id^="btn-valid"], [id^="btn-clear"],
+  [id^="btn-print"], [id^="btn-csv"], [id^="btn-save"],
+  [id^="btn-load"], [id^="btn-go-"], [id^="btn-reset"],
+  #curriculum-overview, .nav-item, #setting-working-days,
   .flex.flex-wrap.items-center.gap-3.mb-4 { display: none !important; }
 
-  /* ダッシュボードの統計 */
-  #dashboard-stats { grid-template-columns: repeat(4, 1fr) !important; }
+  @page { size: A4 landscape; margin: 12mm 10mm; }
+  body { background: #fff !important; color: #000; font-size: 10pt; line-height: 1.4; }
+  #app { display: block !important; }
+  main { padding: 0 !important; max-width: 100%; }
 
-  section + section { page-break-before: always; }
+  /* 印刷ヘッダー: ページタイトル */
+  #page-title {
+    display: block !important;
+    font-size: 14pt; font-weight: bold;
+    margin-bottom: 6px; padding-bottom: 4px;
+    border-bottom: 2px solid #333;
+  }
+
+  /* 時間割テーブル */
+  #timetable-grid { overflow: visible !important; }
+  #timetable-grid table {
+    width: 100% !important; border-collapse: collapse; box-shadow: none !important;
+    border: 2px solid #333; page-break-inside: avoid;
+  }
+  #timetable-grid th {
+    background: #e8e8e8 !important; color: #000 !important;
+    border: 1px solid #999; padding: 5px 4px; font-size: 9pt;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+  #timetable-grid td { border: 1px solid #bbb; padding: 3px 2px; }
+  .tt-cell {
+    min-height: auto !important; height: auto !important;
+    box-shadow: none !important; cursor: default !important;
+  }
+  .tt-cell:hover { background: transparent !important; }
+  .tt-cell.cell-error, .tt-cell.cell-warning {
+    box-shadow: none !important; background: transparent !important;
+  }
+  .tt-cell.drag-over, .tt-cell.dragging, .tt-cell.candidate {
+    opacity: 1 !important; border: 1px solid #bbb !important;
+    background: transparent !important;
+  }
+
+  /* 科目色を印刷用に調整 */
+  [class*="subj-"] {
+    background: #f0f0f0 !important;
+    border-left: 2px solid #888 !important;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* セル内テキストサイズ */
+  .tt-cell .text-\[11px\] { font-size: 8.5pt !important; font-weight: bold !important; }
+  .tt-cell .text-\[9px\]  { font-size: 7pt !important; }
+  .tt-cell .text-\[8px\]  { font-size: 6pt !important; }
+  .tt-cell .text-\[7px\]  { display: none !important; } /* スロットタイプバッジは印刷不要 */
+
+  /* マスターテーブル */
+  table.data-tbl {
+    box-shadow: none !important; border: 1px solid #999;
+    page-break-inside: auto; width: 100% !important;
+  }
+  table.data-tbl th {
+    background: #e8e8e8 !important; print-color-adjust: exact;
+    font-size: 8pt; padding: 4px 6px; border-bottom: 2px solid #666;
+  }
+  table.data-tbl td { font-size: 8pt; padding: 3px 6px; border-bottom: 1px solid #ccc; }
+  table.data-tbl tr { page-break-inside: avoid; }
+  table.data-tbl .edit-btn, table.data-tbl .del-btn { display: none !important; }
+
+  /* 教育課程マップ */
+  #curriculum-map-container { overflow: visible !important; }
+  #curriculum-map-container table {
+    font-size: 7pt !important; border: 1px solid #999;
+    page-break-inside: avoid;
+  }
+  #curriculum-map-container th, #curriculum-map-container td {
+    border: 1px solid #ccc; padding: 2px 3px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+  }
+
+  /* ダッシュボード統計 */
+  #dashboard-stats { grid-template-columns: repeat(4, 1fr) !important; }
+  #dashboard-stats > div { border: 1px solid #ccc !important; }
+
+  /* 件数バッジは印刷不要 */
+  [id^="nav-badge-"] { display: none !important; }
+
+  /* ページ改行 */
+  [id^="page-"] + [id^="page-"]:not(.hidden) { page-break-before: always; }
+  table { page-break-inside: avoid; }
+  tr { page-break-inside: avoid; }
+
+  /* ツールチップは非表示 */
+  .tt-cell[title]:hover::after { display: none !important; }
 }

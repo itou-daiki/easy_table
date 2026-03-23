@@ -202,6 +202,7 @@ function getEditFields(type) {
         {value:'0',label:'月'},{value:'1',label:'火'},{value:'2',label:'水'},
         {value:'3',label:'木'},{value:'4',label:'金'},
       ]},
+      { key: 'unavailablePeriods', label: '授業不可時限（例: 月1限=0-0, 火3限=1-2）', placeholder: '0-0,1-2,4-5', type: 'text' },
       { key: 'maxPeriodsPerDay', label: '1日最大コマ数', type: 'number', placeholder: '5' },
       { key: 'maxConsecutive', label: '最大連続コマ数', type: 'number', placeholder: '3' },
       { key: 'isPartTime', label: '非常勤', type: 'toggle' },
@@ -263,6 +264,12 @@ function parseFormData(type, data) {
     maxPeriodsPerDay: Number(data.maxPeriodsPerDay) || 5,
     maxConsecutive: Number(data.maxConsecutive) || 3,
     isPartTime: data.isPartTime === 'true',
+    unavailablePeriods: data.unavailablePeriods
+      ? data.unavailablePeriods.split(',').map(p => {
+          const [d, pr] = p.trim().split('-').map(Number);
+          return { day: d, period: pr };
+        }).filter(p => !isNaN(p.day) && !isNaN(p.period))
+      : [],
   };
   if (type === 'classes') return { ...data, grade: Number(data.grade) || 1 };
   if (type === 'rooms') return { ...data, capacity: Number(data.capacity) || 40 };
@@ -538,6 +545,12 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ダッシュボード: サンプルデータ読み込み
+  // ダッシュボード統計カードのクリック
+  document.getElementById('dashboard-stats')?.addEventListener('click', e => {
+      const card = e.target.closest('[data-page]');
+      if (card) navigateTo(card.dataset.page);
+  });
+
   document.getElementById('btn-load-sample')?.addEventListener('click', loadSampleData);
   document.getElementById('btn-go-timetable')?.addEventListener('click', () => navigateTo('timetable'));
   document.getElementById('btn-reset-data')?.addEventListener('click', () => {

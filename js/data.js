@@ -13,6 +13,7 @@ const COLUMN_DEFS = {
     { csv: '非常勤', prop: 'isPartTime', aliases: ['is_part_time'] },
     { csv: '1日最大コマ数', prop: 'maxPeriodsPerDay', aliases: ['max_periods_per_day'] },
     { csv: '最大連続コマ数', prop: 'maxConsecutive', aliases: ['max_consecutive'] },
+    { csv: '授業不可時限', prop: 'unavailablePeriods', aliases: ['unavailable_periods'] },
   ],
   classes: [
     { csv: 'ID', prop: 'id', aliases: ['id'] },
@@ -162,6 +163,10 @@ function toCSV(records, columns, type) {
       if (type === 'teachers' && col.prop === 'availableDays') {
         return Array.isArray(val) ? val.join('|') : String(val ?? '');
       }
+      // 授業不可時限はパイプ区切りの"day-period"形式
+      if (type === 'teachers' && col.prop === 'unavailablePeriods') {
+        return Array.isArray(val) ? val.map(p => `${p.day}-${p.period}`).join('|') : String(val ?? '');
+      }
       // 真偽値
       if (typeof val === 'boolean') return val ? 'true' : 'false';
       // 配列（汎用）
@@ -286,7 +291,14 @@ function castRecord(record, type) {
           : [],
         isPartTime: record.isPartTime === 'true' || record.isPartTime === true,
         maxPeriodsPerDay: Number(record.maxPeriodsPerDay) || 0,
-        maxConsecutive: Number(record.maxConsecutive) || 0
+        maxConsecutive: Number(record.maxConsecutive) || 0,
+        // 授業不可時限（"0-0|1-2" → [{day:0,period:0},{day:1,period:2}]）
+        unavailablePeriods: record.unavailablePeriods
+          ? String(record.unavailablePeriods).split('|').map(p => {
+              const [d, pr] = p.trim().split('-').map(Number);
+              return { day: d, period: pr };
+            }).filter(p => !isNaN(p.day) && !isNaN(p.period))
+          : [],
       };
     case 'classes':
       return {
