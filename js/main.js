@@ -12,8 +12,8 @@ import { validate } from './validator.js';
 import { autoSchedule, optimizeExisting } from './scheduler.js';
 import {
   populateEntityPicker, renderDashboard, renderTimetableGrid,
-  renderMasterTable, showEditModal, showValidationResults,
-  showProgress, showNotification,
+  renderMasterTable, renderCurriculumMap, showEditModal,
+  showValidationResults, showProgress, showNotification,
 } from './ui.js';
 
 let currentPage = 'dashboard';
@@ -37,6 +37,9 @@ function refresh() {
   if (!viewId && prevId) viewId = null; // 削除された場合
   if (currentPage === 'timetable') {
     renderTimetableGrid(state, viewMode, viewId, {}, handleSlotMove, handleCellClick, handleCellEdit);
+  }
+  if (currentPage === 'curriculum') {
+    renderCurriculumMap(state);
   }
   if (['teachers', 'classes', 'rooms', 'subjects'].includes(currentPage)) {
     const q = document.getElementById(`search-${currentPage}`)?.value || '';
@@ -185,57 +188,78 @@ function handleCellEdit(day, period, slot) {
 // ─── マスターデータ操作 ───
 
 function getEditFields(type) {
+  const state = getState();
+  // 科目の選択肢を生成（教科でグループ化した表示名付き）
+  const subjectOpts = (state.subjects || []).map(s => ({
+    value: s.id, label: `${s.name}${s.department ? ` (${s.department})` : ''}`
+  }));
+
   const defs = {
     teachers: [
       { key: 'name', label: '氏名', placeholder: '山田太郎' },
-      { key: 'subjects', label: '担当科目ID（カンマ区切り）', placeholder: 's01,s02' },
-      { key: 'availableDays', label: '出勤曜日（0=月〜4=金）', placeholder: '0,1,2,3,4' },
-      { key: 'maxPeriodsPerDay', label: '最大コマ数/日', type: 'number', placeholder: '5' },
+      { key: 'subjects', label: '担当科目', multi: true, options: subjectOpts },
+      { key: 'availableDays', label: '出勤曜日', type: 'checkboxGroup', options: [
+        {value:'0',label:'月'},{value:'1',label:'火'},{value:'2',label:'水'},
+        {value:'3',label:'木'},{value:'4',label:'金'},
+      ]},
+      { key: 'maxPeriodsPerDay', label: '1日最大コマ数', type: 'number', placeholder: '5' },
       { key: 'maxConsecutive', label: '最大連続コマ数', type: 'number', placeholder: '3' },
-      { key: 'isPartTime', label: '非常勤 (true/false)', placeholder: 'false' },
+      { key: 'isPartTime', label: '非常勤', type: 'toggle' },
     ],
     classes: [
       { key: 'name', label: 'クラス名', placeholder: '1年1組' },
-      { key: 'grade', label: '学年', type: 'number', placeholder: '1' },
+      { key: 'grade', label: '学年', options: [
+        {value:'1',label:'1年'},{value:'2',label:'2年'},{value:'3',label:'3年'},
+      ]},
       { key: 'course', label: 'コース', options: [
         {value:'共通',label:'共通（1年など）'},
-        {value:'文系',label:'文系'},
-        {value:'理系',label:'理系'},
+        {value:'文系',label:'文系'},{value:'理系',label:'理系'},
         {value:'文理混合',label:'文理混合'},
-        {value:'特進',label:'特進'},
-        {value:'普通',label:'普通'},
+        {value:'特進',label:'特進'},{value:'普通',label:'普通'},
       ]},
     ],
     rooms: [
       { key: 'name', label: '教室名', placeholder: '1-1教室' },
-      { key: 'type', label: '種別', placeholder: '普通教室' },
+      { key: 'type', label: '種別', options: [
+        {value:'普通教室',label:'普通教室'},{value:'特別教室',label:'特別教室'},
+        {value:'体育施設',label:'体育施設'},{value:'その他',label:'その他'},
+      ]},
       { key: 'capacity', label: '定員', type: 'number', placeholder: '40' },
     ],
     subjects: [
       { key: 'name', label: '科目名', placeholder: '数学Ⅱ' },
-      { key: 'department', label: '教科', placeholder: '数学', options: [
+      { key: 'department', label: '教科', options: [
         {value:'国語',label:'国語'},{value:'地理歴史',label:'地理歴史'},{value:'公民',label:'公民'},
         {value:'数学',label:'数学'},{value:'理科',label:'理科'},{value:'保健体育',label:'保健体育'},
         {value:'芸術',label:'芸術'},{value:'外国語',label:'外国語'},{value:'家庭',label:'家庭'},
-        {value:'情報',label:'情報'},{value:'総合',label:'総合的な探究'},{value:'特別活動',label:'特別活動'},
+        {value:'情報',label:'情報'},{value:'理数',label:'理数'},{value:'総合',label:'総合的な探究'},
+        {value:'特別活動',label:'特別活動'},{value:'商業',label:'商業'},
       ]},
       { key: 'credits', label: '単位数', type: 'number', placeholder: '2' },
       { key: 'hoursPerWeek', label: '週時数', type: 'number', placeholder: '2' },
-      { key: 'isRequired', label: '必履修 (true/false)', placeholder: 'false' },
-      { key: 'targetGrades', label: '対象学年（カンマ区切り: 1,2,3）', placeholder: '1' },
-      { key: 'courseRestriction', label: 'コース制限（文系/理系/空=共通）', placeholder: '' },
-      { key: 'requiresSpecialRoom', label: '特別教室 (true/false)', placeholder: 'false' },
-      { key: 'isSchoolOriginal', label: '学校設定科目 (true/false)', placeholder: 'false' },
+      { key: 'isRequired', label: '必履修科目', type: 'toggle' },
+      { key: 'targetGrades', label: '対象学年', type: 'checkboxGroup', options: [
+        {value:'1',label:'1年'},{value:'2',label:'2年'},{value:'3',label:'3年'},
+      ]},
+      { key: 'courseRestriction', label: 'コース制限', options: [
+        {value:'',label:'共通（制限なし）'},
+        {value:'文系',label:'文系のみ'},{value:'理系',label:'理系のみ'},
+      ]},
+      { key: 'requiresSpecialRoom', label: '特別教室が必要', type: 'toggle' },
+      { key: 'isSchoolOriginal', label: '学校設定科目', type: 'toggle' },
     ],
   };
   return defs[type] || [];
 }
 
+/** カンマ区切り文字列を配列に変換するヘルパー */
+function csvToArray(str) { return str ? str.split(',').map(s => s.trim()).filter(Boolean) : []; }
+
 function parseFormData(type, data) {
   if (type === 'teachers') return {
     ...data,
-    subjects: data.subjects ? data.subjects.split(',').map(s => s.trim()).filter(Boolean) : [],
-    availableDays: data.availableDays ? data.availableDays.split(',').map(Number) : [],
+    subjects: csvToArray(data.subjects),
+    availableDays: csvToArray(data.availableDays).map(Number),
     maxPeriodsPerDay: Number(data.maxPeriodsPerDay) || 5,
     maxConsecutive: Number(data.maxConsecutive) || 3,
     isPartTime: data.isPartTime === 'true',
@@ -248,7 +272,7 @@ function parseFormData(type, data) {
     credits: Number(data.credits) || Number(data.hoursPerWeek) || 1,
     hoursPerWeek: Number(data.hoursPerWeek) || 1,
     isRequired: data.isRequired === 'true',
-    targetGrades: data.targetGrades ? data.targetGrades.split(',').map(Number).filter(n => !isNaN(n)) : [],
+    targetGrades: csvToArray(data.targetGrades).map(Number).filter(n => !isNaN(n)),
     courseRestriction: data.courseRestriction || '',
     requiresSpecialRoom: data.requiresSpecialRoom === 'true',
     isSchoolOriginal: data.isSchoolOriginal === 'true',
@@ -358,7 +382,7 @@ function navigateTo(page) {
   document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
   // タイトル更新
   const titles = {
-    dashboard: 'ダッシュボード', timetable: '時間割',
+    dashboard: 'ダッシュボード', timetable: '時間割', curriculum: '教育課程',
     teachers: '教員管理', classes: 'クラス管理', rooms: '教室管理', subjects: '科目管理',
   };
   const titleEl = document.getElementById('page-title');
@@ -542,17 +566,59 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // 設定の読み込み
-  const state = getState();
-  const nameInput = document.getElementById('setting-school-name');
-  const periodsSelect = document.getElementById('setting-periods');
-  if (nameInput) nameInput.value = state.meta?.schoolName || '';
-  if (periodsSelect) periodsSelect.value = String(state.meta?.periodsPerDay || 6);
+  {
+    const st = getState();
+    const m = st.meta || {};
+    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    setVal('setting-school-name', m.schoolName || '');
+    setVal('setting-year', m.yearLabel || '');
+    setVal('setting-periods', String(m.periodsPerDay || 6));
+    setVal('setting-period-minutes', String(m.periodMinutes || 50));
+    setVal('setting-start-time', m.startTime || '08:50');
+    setVal('setting-break', String(m.breakMinutes || 10));
+    setVal('setting-lunch-after', String(m.lunchAfterPeriod || 4));
+    setVal('setting-lunch', String(m.lunchMinutes || 50));
+    setVal('setting-grad-credits', String(m.graduationCredits || 74));
+    // 授業日チェックボックス
+    const wd = m.workingDays || [0,1,2,3,4];
+    document.querySelectorAll('.wd-cb').forEach(cb => {
+      const v = Number(cb.value);
+      cb.checked = wd.includes(v);
+      const lbl = cb.closest('label');
+      if (lbl) {
+        if (cb.checked) { lbl.classList.add('bg-primary-50','border-primary-300','text-primary-700'); lbl.classList.remove('bg-white','border-gray-200','text-gray-600'); }
+        else { lbl.classList.remove('bg-primary-50','border-primary-300','text-primary-700'); lbl.classList.add('bg-white','border-gray-200','text-gray-600'); }
+      }
+    });
+  }
+
+  // 授業日チェックボックスのトグル
+  document.getElementById('setting-working-days')?.addEventListener('click', e => {
+    const lbl = e.target.closest('label');
+    if (!lbl) return;
+    const cb = lbl.querySelector('.wd-cb');
+    if (!cb) return;
+    setTimeout(() => {
+      if (cb.checked) { lbl.classList.add('bg-primary-50','border-primary-300','text-primary-700'); lbl.classList.remove('bg-white','border-gray-200','text-gray-600'); }
+      else { lbl.classList.remove('bg-primary-50','border-primary-300','text-primary-700'); lbl.classList.add('bg-white','border-gray-200','text-gray-600'); }
+    }, 0);
+  });
 
   document.getElementById('btn-save-settings')?.addEventListener('click', () => {
     const s = getState();
     s.meta = s.meta || {};
     s.meta.schoolName = document.getElementById('setting-school-name')?.value || '';
+    s.meta.yearLabel = document.getElementById('setting-year')?.value || '';
     s.meta.periodsPerDay = Number(document.getElementById('setting-periods')?.value) || 6;
+    s.meta.periodMinutes = Number(document.getElementById('setting-period-minutes')?.value) || 50;
+    s.meta.startTime = document.getElementById('setting-start-time')?.value || '08:50';
+    s.meta.breakMinutes = Number(document.getElementById('setting-break')?.value) || 10;
+    s.meta.lunchAfterPeriod = Number(document.getElementById('setting-lunch-after')?.value) || 4;
+    s.meta.lunchMinutes = Number(document.getElementById('setting-lunch')?.value) || 50;
+    s.meta.graduationCredits = Number(document.getElementById('setting-grad-credits')?.value) || 74;
+    // 授業日
+    const wdCbs = document.querySelectorAll('.wd-cb:checked');
+    s.meta.workingDays = Array.from(wdCbs).map(cb => Number(cb.value)).sort();
     setState(s);
     saveToLocalStorage();
     refresh();

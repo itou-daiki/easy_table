@@ -3,13 +3,28 @@
  * index.html の構造に対応し、Tailwind クラスで描画する
  */
 
-const DAY_LABELS = ['月', '火', '水', '木', '金'];
-const DEFAULT_PERIOD_TIMES = [
-  '8:50–9:40', '9:50–10:40', '10:50–11:40',
-  '11:50–12:40', '13:30–14:20', '14:30–15:20',
-  '15:30–16:20', '16:30–17:20',
-];
-const LUNCH_AFTER = 3; // 4限の後に昼休み（0始まり）
+const DAY_LABELS = ['月', '火', '水', '木', '金', '土'];
+
+/** metaから時限時刻を動的に計算 */
+function calcPeriodTimes(meta) {
+  const pm = meta?.periodMinutes || 50;
+  const brk = meta?.breakMinutes || 10;
+  const lunch = meta?.lunchMinutes || 50;
+  const lunchAfter = meta?.lunchAfterPeriod || 4;
+  const periods = meta?.periodsPerDay || 6;
+  const [sh, sm] = (meta?.startTime || '08:50').split(':').map(Number);
+  let mins = sh * 60 + sm;
+  const times = [];
+  for (let p = 0; p < periods; p++) {
+    if (p === lunchAfter) mins += lunch; // 昼休み分を加算
+    const startH = Math.floor(mins / 60), startM = mins % 60;
+    const endMins = mins + pm;
+    const endH = Math.floor(endMins / 60), endM = endMins % 60;
+    times.push(`${startH}:${String(startM).padStart(2,'0')}–${endH}:${String(endM).padStart(2,'0')}`);
+    mins = endMins + brk;
+  }
+  return times;
+}
 
 /** IDで名前を引く */
 function nameById(list, id) {
@@ -224,6 +239,89 @@ function renderCurriculumOverview(state) {
   el.innerHTML = h;
 }
 
+// ─── 教育課程マップ ───
+
+/** クラス×科目の教育課程マップを描画 */
+export function renderCurriculumMap(state) {
+  const container = document.getElementById('curriculum-map-container');
+  if (!container) return;
+  const classes = state.classes || [];
+  const subjects = state.subjects || [];
+
+  if (classes.length === 0 || subjects.length === 0) {
+    container.innerHTML = '<div class="p-8 text-center text-xs text-gray-400">クラスと科目のデータを登録してください</div>';
+    return;
+  }
+
+  // 教科でグループ化
+  const byDept = new Map();
+  for (const s of subjects) {
+    const dept = s.department || '未分類';
+    if (!byDept.has(dept)) byDept.set(dept, []);
+    byDept.get(dept).push(s);
+  }
+
+  // 現在の配置状況を集計（クラス×科目→コマ数）
+  const slotCounts = new Map();
+  for (const sl of state.slots || []) {
+    const k = `${sl.classId}|${sl.subjectId}`;
+    slotCounts.set(k, (slotCounts.get(k) || 0) + 1);
+  }
+
+  let h = '<table class="w-full text-[10px] border-collapse">';
+  // ヘッダー: クラス名
+  h += '<thead><tr><th class="sticky left-0 bg-gray-50 px-2 py-1.5 border border-gray-200 text-left text-gray-500 z-10 min-w-[100px]">科目</th>';
+  for (const cls of classes) {
+    h += `<th class="px-2 py-1.5 border border-gray-200 text-center bg-gray-50 text-gray-600 min-w-[60px]">${cls.name}</th>`;
+  }
+  h += '</tr></thead><tbody>';
+
+  for (const [dept, subs] of byDept) {
+    // 教科ヘッダー行
+    h += `<tr><td colspan="${classes.length + 1}" class="px-2 py-1 bg-primary-50 text-primary-700 font-semibold border border-gray-200">${dept}</td></tr>`;
+    for (const subj of subs) {
+      h += '<tr>';
+      const badges = [];
+      if (subj.isRequired) badges.push('<span class="text-emerald-600">必</span>');
+      if (subj.courseRestriction) badges.push(`<span class="text-amber-600">${subj.courseRestriction}</span>`);
+      if (subj.isSchoolOriginal) badges.push('<span class="text-violet-600">独</span>');
+      h += `<td class="sticky left-0 bg-white px-2 py-1 border border-gray-200 z-10">${subj.name} <span class="text-[8px]">(${subj.hoursPerWeek}h)</span> ${badges.join(' ')}</td>`;
+
+      for (const cls of classes) {
+        // この科目がこのクラスに適用可能か判定
+        const gradeOk = !subj.targetGrades?.length || subj.targetGrades.includes(cls.grade);
+        const courseOk = !subj.courseRestriction || cls.course === '共通' || cls.course === '文理混合' || subj.courseRestriction === cls.course;
+        const applicable = gradeOk && courseOk;
+        const count = slotCounts.get(`${cls.id}|${subj.id}`) || 0;
+        const target = applicable ? (subj.hoursPerWeek || 0) : 0;
+
+        let cellClass = 'text-center px-1 py-1 border border-gray-200';
+        let content = '';
+        if (!applicable) {
+          cellClass += ' bg-gray-100 text-gray-300';
+          content = '-';
+        } else if (count === 0 && target > 0) {
+          cellClass += ' bg-red-50 text-red-400';
+          content = `0/${target}`;
+        } else if (count < target) {
+          cellClass += ' bg-amber-50 text-amber-600';
+          content = `${count}/${target}`;
+        } else if (count === target) {
+          cellClass += ' bg-emerald-50 text-emerald-600 font-medium';
+          content = `${count}`;
+        } else {
+          cellClass += ' bg-red-50 text-red-600 font-medium';
+          content = `${count}/${target}`;
+        }
+        h += `<td class="${cellClass}">${content}</td>`;
+      }
+      h += '</tr>';
+    }
+  }
+  h += '</tbody></table>';
+  container.innerHTML = h;
+}
+
 // ─── 時間割グリッド ───
 
 export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSlotMove, onCellClick, onCellEdit) {
@@ -247,6 +345,9 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
     return false;
   });
   const periods = state.meta?.periodsPerDay || 6;
+  const periodTimes = calcPeriodTimes(state.meta);
+  const lunchAfter = (state.meta?.lunchAfterPeriod ?? 4) - 1; // 0始まりに変換
+  const workingDays = state.meta?.workingDays || [0,1,2,3,4];
   let dragData = null;
 
   // テーブル構築
@@ -257,10 +358,10 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
   const thead = document.createElement('thead');
   const hRow = document.createElement('tr');
   hRow.innerHTML = '<th class="bg-primary-500 text-white text-xs font-semibold py-2.5 px-2 w-20 border border-primary-400"></th>';
-  for (const d of DAY_LABELS) {
+  for (const di of workingDays) {
     const th = document.createElement('th');
     th.className = 'bg-primary-500 text-white text-xs font-semibold py-2.5 px-2 border border-primary-400 text-center';
-    th.textContent = d;
+    th.textContent = DAY_LABELS[di] || `Day${di}`;
     hRow.appendChild(th);
   }
   thead.appendChild(hRow);
@@ -269,21 +370,21 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
   // ボディ
   const tbody = document.createElement('tbody');
   for (let p = 0; p < periods; p++) {
-    // 昼休み（4限の後）
-    if (p === LUNCH_AFTER + 1 && periods > 4) {
+    // 昼休み
+    if (p === lunchAfter + 1 && periods > lunchAfter + 1) {
       const lr = document.createElement('tr');
       lr.innerHTML = `<td class="bg-amber-50 text-amber-600 text-[10px] font-semibold py-1 px-2 text-center border border-gray-200">昼休み</td>
-        <td colspan="5" class="bg-amber-50 text-amber-500 text-[10px] text-center py-1 border border-gray-200">12:40 – 13:30</td>`;
+        <td colspan="${workingDays.length}" class="bg-amber-50 text-amber-500 text-[10px] text-center py-1 border border-gray-200">${state.meta?.lunchMinutes || 50}分</td>`;
       tbody.appendChild(lr);
     }
     const row = document.createElement('tr');
     // 時限ラベル
     const lbl = document.createElement('td');
     lbl.className = 'bg-gray-50 text-center py-2 px-2 border border-gray-200 w-20';
-    lbl.innerHTML = `<div class="text-xs font-semibold text-gray-700">${p + 1}限</div><div class="text-[9px] text-gray-400">${DEFAULT_PERIOD_TIMES[p] || ''}</div>`;
+    lbl.innerHTML = `<div class="text-xs font-semibold text-gray-700">${p + 1}限</div><div class="text-[9px] text-gray-400">${periodTimes[p] || ''}</div>`;
     row.appendChild(lbl);
 
-    for (let d = 0; d < 5; d++) {
+    for (const d of workingDays) {
       const slot = slots.find(s => s.day === d && s.period === p);
       const td = document.createElement('td');
       td.className = 'tt-cell border border-gray-200 p-1 align-top cursor-pointer transition-all duration-100 min-h-[56px] h-16 relative';
@@ -470,7 +571,10 @@ export function renderMasterTable(state, type, searchQuery, onEdit, onDelete) {
 
 /**
  * 編集モーダルを表示する
- * fields: [{ key, label, type?, placeholder?, options?: [{value,label}] }]
+ * fields: [{ key, label, type?, placeholder?, options?, multi? }]
+ * type: 'text'|'number'|'toggle'|'checkboxGroup'|'hidden'
+ * options: [{value,label}]  (select / checkboxGroup 用)
+ * multi: true → 複数選択（タグ型）
  */
 export function showEditModal(title, fields, values, onSave) {
   const overlay = document.getElementById('modal-overlay');
@@ -482,30 +586,114 @@ export function showEditModal(title, fields, values, onSave) {
   for (const f of fields) {
     const div = document.createElement('div');
     div.className = 'mb-3';
-    const val = Array.isArray(values[f.key]) ? values[f.key].join(', ') : (values[f.key] ?? '');
+    const rawVal = values[f.key];
+    const val = Array.isArray(rawVal) ? rawVal : (rawVal ?? '');
+    const valStr = Array.isArray(val) ? val.join(', ') : String(val);
+    const valArr = Array.isArray(val) ? val.map(String) : [];
+
     let inputHtml;
-    if (f.options) {
+
+    if (f.type === 'toggle') {
+      // トグルスイッチ
+      const checked = val === true || val === 'true';
+      inputHtml = `<label class="inline-flex items-center gap-2 cursor-pointer">
+        <input name="${f.key}" type="checkbox" ${checked ? 'checked' : ''} class="sr-only peer">
+        <div class="w-9 h-5 bg-gray-200 peer-checked:bg-primary-500 rounded-full relative transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-4"></div>
+        <span class="text-xs text-gray-500">${val === true || val === 'true' ? 'はい' : 'いいえ'}</span>
+      </label>`;
+    } else if (f.type === 'checkboxGroup' && f.options) {
+      // チェックボックスグループ（複数選択）
+      inputHtml = `<div class="flex flex-wrap gap-2 mt-1" data-name="${f.key}" data-type="checkboxGroup">` +
+        f.options.map(o => {
+          const checked = valArr.includes(String(o.value));
+          return `<label class="inline-flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border ${checked ? 'bg-primary-50 border-primary-300 text-primary-700' : 'bg-white border-gray-200 text-gray-600'} hover:border-primary-300 transition-colors">
+            <input type="checkbox" value="${o.value}" ${checked ? 'checked' : ''} class="sr-only cbg-input">
+            ${o.label}
+          </label>`;
+        }).join('') + `</div>`;
+    } else if (f.options && f.multi) {
+      // マルチセレクト（タグ型）
+      inputHtml = `<div class="flex flex-wrap gap-1 mt-1 p-2 border border-gray-300 rounded-lg min-h-[36px] bg-white" data-name="${f.key}" data-type="multiSelect">` +
+        f.options.map(o => {
+          const selected = valArr.includes(String(o.value));
+          return `<button type="button" data-value="${o.value}" class="ms-tag text-[10px] px-2 py-0.5 rounded-full border transition-colors ${selected ? 'bg-primary-500 text-white border-primary-500' : 'bg-gray-100 text-gray-600 border-gray-200 hover:border-primary-300'}">${o.label}</button>`;
+        }).join('') + `</div>`;
+    } else if (f.options) {
       // ドロップダウン選択
       const opts = f.options.map(o =>
-        `<option value="${o.value}" ${o.value === String(val) ? 'selected' : ''}>${o.label}</option>`
+        `<option value="${o.value}" ${o.value === valStr ? 'selected' : ''}>${o.label}</option>`
       ).join('');
       inputHtml = `<select name="${f.key}" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none bg-white">
         <option value="">-- 選択 --</option>${opts}</select>`;
+    } else if (f.type === 'hidden') {
+      inputHtml = `<input name="${f.key}" type="hidden" value="${valStr}">`;
     } else {
-      inputHtml = `<input name="${f.key}" type="${f.type || 'text'}" value="${String(val)}"
+      inputHtml = `<input name="${f.key}" type="${f.type || 'text'}" value="${valStr}"
         placeholder="${f.placeholder || ''}"
         class="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">`;
     }
-    div.innerHTML = `<label class="block text-[11px] font-semibold text-gray-600 mb-1">${f.label}</label>${inputHtml}`;
+    const labelHtml = f.type === 'hidden' ? '' : `<label class="block text-[11px] font-semibold text-gray-600 mb-1">${f.label}</label>`;
+    div.innerHTML = `${labelHtml}${inputHtml}`;
     body.appendChild(div);
   }
+
+  // チェックボックスグループのクリックイベント
+  body.querySelectorAll('[data-type="checkboxGroup"]').forEach(group => {
+    group.addEventListener('click', e => {
+      const label = e.target.closest('label');
+      if (!label) return;
+      const cb = label.querySelector('.cbg-input');
+      if (!cb) return;
+      // トグル見た目
+      if (cb.checked) { label.classList.add('bg-primary-50','border-primary-300','text-primary-700'); label.classList.remove('bg-white','border-gray-200','text-gray-600'); }
+      else { label.classList.remove('bg-primary-50','border-primary-300','text-primary-700'); label.classList.add('bg-white','border-gray-200','text-gray-600'); }
+    });
+  });
+
+  // マルチセレクトのクリックイベント
+  body.querySelectorAll('[data-type="multiSelect"]').forEach(group => {
+    group.addEventListener('click', e => {
+      const tag = e.target.closest('.ms-tag');
+      if (!tag) return;
+      const on = tag.classList.contains('bg-primary-500');
+      if (on) { tag.classList.remove('bg-primary-500','text-white','border-primary-500'); tag.classList.add('bg-gray-100','text-gray-600','border-gray-200'); }
+      else { tag.classList.add('bg-primary-500','text-white','border-primary-500'); tag.classList.remove('bg-gray-100','text-gray-600','border-gray-200'); }
+    });
+  });
+
+  // トグルスイッチのラベル更新
+  body.querySelectorAll('input[type="checkbox"]:not(.cbg-input):not(.sr-only)').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const span = cb.closest('label')?.querySelector('span');
+      if (span) span.textContent = cb.checked ? 'はい' : 'いいえ';
+    });
+  });
 
   overlay.classList.remove('hidden');
   const close = () => overlay.classList.add('hidden');
 
-  // Escキーで閉じる
   const escHandler = e => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', escHandler); } };
   document.addEventListener('keydown', escHandler);
+
+  /** フォームデータ収集 */
+  function collectData() {
+    const data = {};
+    for (const f of fields) {
+      if (f.type === 'toggle') {
+        const cb = body.querySelector(`[name="${f.key}"]`);
+        data[f.key] = cb?.checked ? 'true' : 'false';
+      } else if (f.type === 'checkboxGroup') {
+        const checked = body.querySelectorAll(`[data-name="${f.key}"] .cbg-input:checked`);
+        data[f.key] = Array.from(checked).map(c => c.value).join(',');
+      } else if (f.multi) {
+        const tags = body.querySelectorAll(`[data-name="${f.key}"] .ms-tag.bg-primary-500`);
+        data[f.key] = Array.from(tags).map(t => t.dataset.value).join(',');
+      } else {
+        data[f.key] = body.querySelector(`[name="${f.key}"]`)?.value?.trim() ?? '';
+      }
+    }
+    return data;
+  }
 
   const wire = (id, fn) => {
     const el = document.getElementById(id);
@@ -513,13 +701,7 @@ export function showEditModal(title, fields, values, onSave) {
     el.parentNode.replaceChild(clone, el);
     clone.addEventListener('click', fn);
   };
-  wire('btn-modal-save', () => {
-    const data = {};
-    for (const f of fields) data[f.key] = body.querySelector(`[name="${f.key}"]`)?.value?.trim() ?? '';
-    onSave(data);
-    close();
-    document.removeEventListener('keydown', escHandler);
-  });
+  wire('btn-modal-save', () => { onSave(collectData()); close(); document.removeEventListener('keydown', escHandler); });
   wire('btn-modal-cancel', () => { close(); document.removeEventListener('keydown', escHandler); });
   wire('btn-modal-close', () => { close(); document.removeEventListener('keydown', escHandler); });
 }

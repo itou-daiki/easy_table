@@ -18,7 +18,17 @@ function createInitialState() {
       schoolName: '',
       periodsPerDay: 6,
       workingDays: [0, 1, 2, 3, 4],
+      periodMinutes: 50,         // 1コマの時間（分）
+      startTime: '08:50',        // 1限開始時刻
+      breakMinutes: 10,          // 休憩時間（分）
+      lunchAfterPeriod: 4,       // 昼休みを入れる時限（4限の後）
+      lunchMinutes: 50,          // 昼休み時間（分）
+      graduationCredits: 74,     // 卒業必要単位数
+      courses: ['共通', '文系', '理系', '文理混合'], // 利用するコース
+      yearLabel: '',             // 年度ラベル（例: 2025年度）
     },
+    // 教育課程テンプレート（クラス×科目の割り当て定義）
+    curriculumMap: [],  // [{ classId, subjectId, teacherId, roomId, hoursPerWeek }]
   };
 }
 

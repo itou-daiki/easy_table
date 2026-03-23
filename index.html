@@ -42,6 +42,9 @@
         <button data-page="timetable" class="nav-item">
           <span class="nav-icon">▦</span>時間割
         </button>
+        <button data-page="curriculum" class="nav-item">
+          <span class="nav-icon">▣</span>教育課程
+        </button>
         <div class="pt-3 pb-1 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">マスタ管理</div>
         <button data-page="teachers" class="nav-item">
           <span class="nav-icon">◉</span>教員<span id="nav-badge-teachers" class="ml-auto text-[9px] text-gray-400"></span>
@@ -113,22 +116,86 @@
           </div>
           <div class="bg-white rounded-lg border border-gray-200 p-4 mt-4">
             <h3 class="text-sm font-semibold text-gray-700 mb-3">学校設定</h3>
-            <div class="space-y-3">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
               <div>
                 <label class="block text-[11px] font-semibold text-gray-500 mb-1">学校名</label>
                 <input id="setting-school-name" type="text" placeholder="○○高等学校" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
               </div>
               <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">年度</label>
+                <input id="setting-year" type="text" placeholder="2025年度" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+              </div>
+              <div>
                 <label class="block text-[11px] font-semibold text-gray-500 mb-1">1日のコマ数</label>
-                <select id="setting-periods" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+                <select id="setting-periods" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+                  <option value="4">4コマ</option>
                   <option value="5">5コマ</option>
                   <option value="6" selected>6コマ</option>
                   <option value="7">7コマ</option>
+                  <option value="8">8コマ</option>
                 </select>
               </div>
-              <button id="btn-save-settings" class="text-xs px-3 py-1.5 rounded bg-primary-500 text-white hover:bg-primary-600 transition-colors font-medium">設定を保存</button>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">1コマの時間（分）</label>
+                <select id="setting-period-minutes" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+                  <option value="45">45分</option>
+                  <option value="50" selected>50分</option>
+                  <option value="55">55分</option>
+                  <option value="60">60分</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">1限開始時刻</label>
+                <input id="setting-start-time" type="time" value="08:50" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">休憩時間（分）</label>
+                <input id="setting-break" type="number" value="10" min="5" max="30" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">昼休み位置（何限の後）</label>
+                <select id="setting-lunch-after" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+                  <option value="3">3限の後</option>
+                  <option value="4" selected>4限の後</option>
+                  <option value="5">5限の後</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">昼休み時間（分）</label>
+                <input id="setting-lunch" type="number" value="50" min="30" max="90" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">卒業必要単位数</label>
+                <input id="setting-grad-credits" type="number" value="74" min="1" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 w-full focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">授業日</label>
+                <div id="setting-working-days" class="flex gap-1.5 mt-1">
+                  <label class="inline-flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border bg-primary-50 border-primary-300 text-primary-700"><input type="checkbox" value="0" checked class="sr-only wd-cb">月</label>
+                  <label class="inline-flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border bg-primary-50 border-primary-300 text-primary-700"><input type="checkbox" value="1" checked class="sr-only wd-cb">火</label>
+                  <label class="inline-flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border bg-primary-50 border-primary-300 text-primary-700"><input type="checkbox" value="2" checked class="sr-only wd-cb">水</label>
+                  <label class="inline-flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border bg-primary-50 border-primary-300 text-primary-700"><input type="checkbox" value="3" checked class="sr-only wd-cb">木</label>
+                  <label class="inline-flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border bg-primary-50 border-primary-300 text-primary-700"><input type="checkbox" value="4" checked class="sr-only wd-cb">金</label>
+                  <label class="inline-flex items-center gap-1 text-xs cursor-pointer px-2 py-1 rounded border bg-white border-gray-200 text-gray-600"><input type="checkbox" value="5" class="sr-only wd-cb">土</label>
+                </div>
+              </div>
+            </div>
+            <button id="btn-save-settings" class="mt-3 text-xs px-4 py-1.5 rounded bg-primary-500 text-white hover:bg-primary-600 transition-colors font-medium">設定を保存</button>
+          </div>
+        </div>
+
+        <!-- 教育課程 -->
+        <div id="page-curriculum" class="hidden">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <p class="text-xs text-gray-500">クラスごとにどの科目を何コマ配置するかを定義します。自動配置の基盤になります。</p>
+            </div>
+            <div class="flex gap-2">
+              <button id="btn-auto-curriculum" class="text-xs px-3 py-1.5 rounded bg-primary-500 text-white hover:bg-primary-600 transition-colors font-medium">学年・コースから自動生成</button>
+              <button id="btn-clear-curriculum" class="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">クリア</button>
             </div>
           </div>
+          <div id="curriculum-map-container" class="bg-white rounded-lg border border-gray-200 overflow-x-auto"></div>
         </div>
 
         <!-- 時間割 -->
