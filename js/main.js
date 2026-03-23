@@ -4,7 +4,8 @@
  */
 import {
   getState, setState, saveToLocalStorage, loadFromLocalStorage, resetState,
-  addSlot, removeSlot, addMasterRecord, updateMasterRecord, removeMasterRecord,
+  addSlot, removeSlot, updateSlot, addMasterRecord, updateMasterRecord, removeMasterRecord,
+  undo, redo,
 } from './store.js';
 import { importCSV, exportMastersCSV, exportSlotsCSV } from './data.js';
 import { validate } from './validator.js';
@@ -94,17 +95,66 @@ function handleCellClick(day, period) {
   });
 }
 
-/** コマ入りセルクリック → 削除確認 */
+/** コマ入りセルクリック → 編集/削除モーダル */
 function handleCellEdit(day, period, slot) {
   const state = getState();
   const dayName = ['月','火','水','木','金'][day];
-  const subjName = (state.subjects || []).find(s => s.id === slot.subjectId)?.name || slot.subjectId;
-  if (confirm(`${dayName}曜 ${period+1}限「${subjName}」を削除しますか？`)) {
-    removeSlot(day, period, slot.classId);
+
+  const classOpts = (state.classes || []).map(c => ({ value: c.id, label: c.name }));
+  const subjectOpts = (state.subjects || []).map(s => ({ value: s.id, label: s.name }));
+  const teacherOpts = (state.teachers || []).map(t => ({ value: t.id, label: t.name }));
+  const roomOpts = (state.rooms || []).map(r => ({ value: r.id, label: `${r.name} (${r.type})` }));
+  const typeOpts = [
+    { value: 'single', label: '単独授業' }, { value: 'elective', label: '選択授業' },
+    { value: 'course', label: 'コース別' }, { value: 'team_teaching', label: 'TT授業' },
+    { value: 'double', label: '時間続き' }, { value: 'fixed', label: '固定コマ' },
+  ];
+
+  const fields = [
+    { key: 'subjectId', label: '科目', options: subjectOpts },
+    { key: 'teacherId', label: '教員', options: teacherOpts },
+    { key: 'roomId', label: '教室', options: roomOpts },
+    { key: 'slotType', label: 'コマ種別', options: typeOpts },
+    { key: '_delete', label: '', type: 'hidden' },
+  ];
+
+  // カスタムモーダル: 編集 + 削除ボタン
+  showEditModal(`コマ編集 (${dayName}曜 ${period+1}限)`, fields, slot, data => {
+    if (data._delete === 'true') {
+      removeSlot(day, period, slot.classId);
+      showNotification('コマを削除しました', 'info');
+    } else {
+      updateSlot(day, period, slot.classId, {
+        subjectId: data.subjectId || slot.subjectId,
+        teacherId: data.teacherId || slot.teacherId,
+        roomId: data.roomId || slot.roomId,
+        slotType: data.slotType || slot.slotType,
+      });
+      showNotification('コマを更新しました', 'success');
+    }
     saveToLocalStorage();
     refreshTimetable();
-    showNotification('コマを削除しました', 'info');
-  }
+  });
+
+  // 削除ボタンをモーダルに追加
+  setTimeout(() => {
+    const body = document.getElementById('modal-body');
+    if (!body) return;
+    // hidden フィールドを除去し、削除ボタンを追加
+    const hiddenDiv = body.querySelector('[name="_delete"]')?.closest('div');
+    if (hiddenDiv) {
+      hiddenDiv.innerHTML = `
+        <button id="btn-slot-delete" class="w-full mt-2 text-xs px-3 py-2 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors">
+          このコマを削除
+        </button>`;
+      document.getElementById('btn-slot-delete')?.addEventListener('click', () => {
+        const hiddenInput = body.querySelector('[name="_delete"]') || document.createElement('input');
+        hiddenInput.name = '_delete'; hiddenInput.value = 'true'; hiddenInput.type = 'hidden';
+        body.appendChild(hiddenInput);
+        document.getElementById('btn-modal-save')?.click();
+      });
+    }
+  }, 0);
 }
 
 // ─── マスターデータ操作 ───
@@ -374,8 +424,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!document.getElementById('modal-overlay')?.classList.contains('hidden')) return;
     if (e.ctrlKey || e.metaKey) {
       if (e.key === 's') { e.preventDefault(); saveToLocalStorage(); showNotification('保存しました', 'success'); }
-      if (e.key === 'e') { e.preventDefault(); document.getElementById('btn-csv-export')?.click(); }
-      if (e.key === 'i') { e.preventDefault(); document.getElementById('btn-csv-import')?.click(); }
+      if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); if (undo()) { saveToLocalStorage(); refresh(); showNotification('元に戻しました', 'info'); } }
+      if (e.key === 'z' && e.shiftKey) { e.preventDefault(); if (redo()) { saveToLocalStorage(); refresh(); showNotification('やり直しました', 'info'); } }
+      if (e.key === 'y') { e.preventDefault(); if (redo()) { saveToLocalStorage(); refresh(); showNotification('やり直しました', 'info'); } }
     }
     // 数字キーでページ切り替え
     if (!e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'SELECT') {
