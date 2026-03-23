@@ -817,29 +817,125 @@ export function showEditModal(title, fields, values, onSave) {
 export function showValidationResults(errors, warnings) {
   const el = document.getElementById('validation-results');
   if (!el) return {};
-  const items = [
-    ...(errors || []).map(e => ({ ...e, lv: 'error' })),
-    ...(warnings || []).map(w => ({ ...w, lv: 'warning' })),
-  ];
-  if (items.length === 0) {
-    el.innerHTML = '<div class="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2">制約違反はありません</div>';
+  const allErrors = (errors || []).map(e => ({ ...e, lv: 'error' }));
+  const allWarnings = (warnings || []).map(w => ({ ...w, lv: 'warning' }));
+
+  if (allErrors.length === 0 && allWarnings.length === 0) {
+    el.innerHTML = `<div class="flex items-center gap-2 text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-3">
+      <span class="text-lg">&#10003;</span>
+      <div><div class="font-semibold">制約違反はありません</div><div class="text-emerald-500 mt-0.5">すべての制約条件を満たしています</div></div>
+    </div>`;
     return {};
   }
-  el.innerHTML = `<div class="space-y-1.5">${items.map(i => {
-    const dayAttr = i.day != null ? ` data-day="${i.day}"` : '';
-    const periodAttr = i.period != null ? ` data-period="${i.period}"` : '';
-    const clickable = (i.day != null && i.period != null) ? ' cursor-pointer hover:opacity-80' : '';
-    return `<div class="text-xs px-3 py-1.5 rounded-lg border${clickable} ${
-      i.lv === 'error' ? 'bg-red-50 border-red-200 text-red-700' : 'bg-amber-50 border-amber-200 text-amber-700'
-    }"${dayAttr}${periodAttr}>[${i.type}] ${i.message}</div>`;
-  }).join('')}</div>`;
 
+  // 種類別にグループ化
+  const groups = new Map();
+  for (const item of [...allErrors, ...allWarnings]) {
+    const key = item.type;
+    if (!groups.has(key)) groups.set(key, { type: key, lv: item.lv, items: [] });
+    const g = groups.get(key);
+    if (item.lv === 'error') g.lv = 'error'; // 1つでもエラーがあればエラーグループ
+    g.items.push(item);
+  }
+
+  // 説明文（ユーザーにやさしいガイド）
+  const guides = {
+    '教員重複': { icon: '&#9888;', desc: '同じ教員が同じ時間に複数のクラスに配置されています', action: '片方のコマを別の時間に移動するか、別の教員に変更してください' },
+    '教室重複': { icon: '&#9888;', desc: '同じ教室が同じ時間に複数のクラスで使用されています', action: '片方のコマの教室を変更してください' },
+    '同日同科目': { icon: '&#9888;', desc: '同じクラスで同じ日に同じ科目が複数回配置されています', action: 'コマを別の曜日に移動してください' },
+    '出勤日外': { icon: '&#9888;', desc: '教員の出勤日ではない曜日にコマが配置されています', action: '別の曜日に移動するか、別の教員に変更してください' },
+    '授業不可時限': { icon: '&#9888;', desc: '教員が授業できない時限にコマが配置されています', action: '別の時限に移動するか、別の教員に変更してください' },
+    'クラス重複': { icon: '&#9888;', desc: '同じクラスの同じ時間に複数の授業が重なっています', action: '選択同時開講でなければ、片方を別の時間に移動してください' },
+    '1日コマ数超過': { icon: '&#9888;', desc: '教員の1日あたりの授業コマ数が上限を超えています', action: '一部のコマを別の曜日に移動してください' },
+    '連続コマ超過': { icon: '&#9888;', desc: '教員の連続授業コマ数が上限を超えています', action: '間に空きコマを入れてください' },
+    '週時数不一致': { icon: '&#128203;', desc: '科目の週あたりコマ数が設定値と異なります', action: 'コマを追加または削除して調整してください' },
+    'コース不一致': { icon: '&#128203;', desc: 'コース制限のある科目が対象外のクラスに配置されています', action: '科目を適切なコースのクラスに移動してください' },
+    '学年不一致': { icon: '&#128203;', desc: '対象学年外のクラスに科目が配置されています', action: '科目を正しい学年のクラスに移動してください' },
+    '必履修未配置': { icon: '&#128203;', desc: '必履修科目がまだ配置されていないクラスがあります', action: '該当クラスにコマを追加してください' },
+  };
+
+  // サマリー
+  let html = `<div class="bg-white border border-gray-200 rounded-lg overflow-hidden">`;
+  html += `<div class="flex items-center gap-3 px-4 py-2.5 border-b border-gray-100 bg-gray-50">
+    <div class="flex gap-3 text-xs font-semibold">`;
+  if (allErrors.length > 0) html += `<span class="text-red-600 bg-red-100 px-2 py-0.5 rounded-full">エラー ${allErrors.length}件</span>`;
+  if (allWarnings.length > 0) html += `<span class="text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full">警告 ${allWarnings.length}件</span>`;
+  html += `</div><div class="flex-1"></div>
+    <button id="btn-toggle-warnings" class="text-[10px] text-gray-500 hover:text-gray-700">警告を${allWarnings.length > 10 ? '折りたたむ' : '表示'}</button>
+  </div>`;
+
+  // グループ別表示
+  const DAY_JA = ['月','火','水','木','金','土'];
+  let warningGroupsHtml = '';
+
+  for (const [, group] of groups) {
+    const guide = guides[group.type] || { icon: '&#8226;', desc: '', action: '' };
+    const isError = group.lv === 'error';
+    const borderColor = isError ? 'border-red-200' : 'border-amber-200';
+    const bgColor = isError ? 'bg-red-50' : 'bg-amber-50';
+    const textColor = isError ? 'text-red-700' : 'text-amber-700';
+    const headerBg = isError ? 'bg-red-100' : 'bg-amber-100';
+
+    const groupHtml = `<div class="border-b ${borderColor} last:border-b-0">
+      <div class="flex items-center gap-2 px-4 py-2 ${headerBg} cursor-pointer group-toggle" data-type="${group.type}">
+        <span class="text-sm">${guide.icon}</span>
+        <span class="text-xs font-semibold ${textColor}">${group.type}</span>
+        <span class="text-[10px] ${textColor} opacity-70">${group.items.length}件</span>
+        <span class="text-[10px] ml-auto text-gray-400 toggle-arrow">▼</span>
+      </div>
+      <div class="group-body px-4 py-1.5 ${bgColor}" data-group="${group.type}">
+        ${guide.desc ? `<p class="text-[10px] text-gray-500 mb-1.5">${guide.desc}</p>` : ''}
+        ${guide.action ? `<p class="text-[10px] text-primary-600 mb-1.5">&#10132; ${guide.action}</p>` : ''}
+        <div class="space-y-1">
+          ${group.items.map(item => {
+            const dayAttr = item.day != null ? ` data-day="${item.day}"` : '';
+            const periodAttr = item.period != null ? ` data-period="${item.period}"` : '';
+            const clickable = (item.day != null && item.period != null) ? ' cursor-pointer hover:bg-white/50 active:bg-white/80' : '';
+            const location = (item.day != null && item.period != null) ? `<span class="font-mono text-[9px] ${isError ? 'bg-red-200' : 'bg-amber-200'} px-1 rounded mr-1">${DAY_JA[item.day] || item.day}${(item.period ?? 0) + 1}</span>` : '';
+            return `<div class="text-[11px] ${textColor} py-0.5 px-1.5 rounded${clickable}"${dayAttr}${periodAttr}>${location}${item.message}</div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>`;
+
+    if (isError) {
+      html += groupHtml;
+    } else {
+      warningGroupsHtml += groupHtml;
+    }
+  }
+
+  // 警告は折りたたみ可能
+  if (warningGroupsHtml) {
+    html += `<div id="warning-groups">${warningGroupsHtml}</div>`;
+  }
+
+  html += `</div>`;
+  el.innerHTML = html;
+
+  // グループの折りたたみ
+  el.querySelectorAll('.group-toggle').forEach(toggle => {
+    toggle.addEventListener('click', () => {
+      const body = el.querySelector(`[data-group="${toggle.dataset.type}"]`);
+      const arrow = toggle.querySelector('.toggle-arrow');
+      if (body) {
+        body.classList.toggle('hidden');
+        if (arrow) arrow.textContent = body.classList.contains('hidden') ? '▶' : '▼';
+      }
+    });
+  });
+
+  // 警告の一括折りたたみ
+  document.getElementById('btn-toggle-warnings')?.addEventListener('click', () => {
+    const wg = document.getElementById('warning-groups');
+    if (wg) { wg.classList.toggle('hidden'); }
+  });
+
+  // セルへのジャンプ
   el.addEventListener('click', e => {
     const item = e.target.closest('[data-day][data-period]');
-    if (!item) return;
-    const day = item.dataset.day;
-    const period = item.dataset.period;
-    const cell = document.querySelector(`.tt-cell[data-day="${day}"][data-period="${period}"]`);
+    if (!item || item.classList.contains('group-toggle')) return;
+    const cell = document.querySelector(`.tt-cell[data-day="${item.dataset.day}"][data-period="${item.dataset.period}"]`);
     if (cell) {
       cell.scrollIntoView({ behavior: 'smooth', block: 'center' });
       cell.classList.add('ring-2', 'ring-primary-500', 'ring-offset-1');
@@ -848,7 +944,7 @@ export function showValidationResults(errors, warnings) {
   });
 
   const map = {};
-  for (const i of items) {
+  for (const i of [...allErrors, ...allWarnings]) {
     if (i.day != null && i.period != null) {
       const k = `${i.day}-${i.period}`;
       if (!map[k] || i.lv === 'error') map[k] = i.lv;
