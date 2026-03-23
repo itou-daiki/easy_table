@@ -27,16 +27,21 @@
   #timetable-grid table {
     width: 100% !important; border-collapse: collapse; box-shadow: none !important;
     border: 2px solid #333; page-break-inside: avoid;
+    table-layout: fixed !important;
   }
   #timetable-grid th {
     background: #e8e8e8 !important; color: #000 !important;
-    border: 1px solid #999; padding: 5px 4px; font-size: 9pt;
+    border: 1px solid #999; padding: 4px 3px; font-size: 8pt;
     -webkit-print-color-adjust: exact; print-color-adjust: exact;
   }
-  #timetable-grid td { border: 1px solid #bbb; padding: 3px 2px; }
+  /* 時限ラベル列の幅を固定 */
+  #timetable-grid th:first-child,
+  #timetable-grid td:first-child { width: 60px !important; }
+  #timetable-grid td { border: 1px solid #bbb; padding: 2px; }
   .tt-cell {
-    min-height: auto !important; height: auto !important;
+    height: 48px !important; min-height: 48px !important;
     box-shadow: none !important; cursor: default !important;
+    overflow: hidden !important;
   }
   .tt-cell:hover { background: transparent !important; }
   .tt-cell.cell-error, .tt-cell.cell-warning {

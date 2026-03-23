@@ -324,6 +324,7 @@ function castRecord(record, type) {
         requiresSpecialRoom: record.requiresSpecialRoom === 'true' || record.requiresSpecialRoom === true,
         isSchoolOriginal: record.isSchoolOriginal === 'true' || record.isSchoolOriginal === true,
         department: record.department || '',
+        alternativeFor: record.alternativeFor || '',
       };
     case 'slots':
       return {

@@ -88,7 +88,7 @@ function handleCellClick(day, period) {
   const typeOpts = [
     { value: 'single', label: '単独授業' }, { value: 'elective', label: '選択授業' },
     { value: 'course', label: 'コース別' }, { value: 'team_teaching', label: 'TT授業' },
-    { value: 'double', label: '時間続き' }, { value: 'fixed', label: '固定コマ' },
+    { value: 'double', label: '時間続き' }, { value: 'fixed', label: '固定コマ' }, { value: 'meeting', label: '会議' },
   ];
 
   const fields = [
@@ -145,7 +145,7 @@ function handleCellEdit(day, period, slot) {
   const typeOpts = [
     { value: 'single', label: '単独授業' }, { value: 'elective', label: '選択授業' },
     { value: 'course', label: 'コース別' }, { value: 'team_teaching', label: 'TT授業' },
-    { value: 'double', label: '時間続き' }, { value: 'fixed', label: '固定コマ' },
+    { value: 'double', label: '時間続き' }, { value: 'fixed', label: '固定コマ' }, { value: 'meeting', label: '会議' },
   ];
 
   const fields = [
@@ -202,7 +202,7 @@ function getEditFields(type) {
         {value:'0',label:'月'},{value:'1',label:'火'},{value:'2',label:'水'},
         {value:'3',label:'木'},{value:'4',label:'金'},
       ]},
-      { key: 'unavailablePeriods', label: '授業不可時限（例: 月1限=0-0, 火3限=1-2）', placeholder: '0-0,1-2,4-5', type: 'text' },
+      { key: 'unavailablePeriods', label: '授業不可時限（クリックで選択）', type: 'periodGrid' },
       { key: 'maxPeriodsPerDay', label: '1日最大コマ数', type: 'number', placeholder: '5' },
       { key: 'maxConsecutive', label: '最大連続コマ数', type: 'number', placeholder: '3' },
       { key: 'isPartTime', label: '非常勤', type: 'toggle' },
@@ -248,6 +248,10 @@ function getEditFields(type) {
       ]},
       { key: 'requiresSpecialRoom', label: '特別教室が必要', type: 'toggle' },
       { key: 'isSchoolOriginal', label: '学校設定科目', type: 'toggle' },
+      { key: 'alternativeFor', label: '代替科目（空欄可）', options: [
+        {value:'', label:'なし（独自科目）'},
+        ...subjectOpts,
+      ]},
     ],
   };
   return defs[type] || [];
@@ -283,6 +287,7 @@ function parseFormData(type, data) {
     courseRestriction: data.courseRestriction || '',
     requiresSpecialRoom: data.requiresSpecialRoom === 'true',
     isSchoolOriginal: data.isSchoolOriginal === 'true',
+    alternativeFor: data.alternativeFor || '',
   };
   return data;
 }

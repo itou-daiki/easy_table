@@ -357,9 +357,10 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
   const getPeriodsForDay = (d) => Number(pByDay[d]) || defaultPeriods;
   let dragData = null;
 
-  // テーブル構築
+  // テーブル構築（table-layout:fixed でセル幅を均等化）
   const tbl = document.createElement('table');
   tbl.className = 'w-full border-collapse bg-white rounded-lg overflow-hidden border border-gray-200';
+  tbl.style.tableLayout = 'fixed';
 
   // ヘッダー
   const thead = document.createElement('thead');
@@ -396,16 +397,18 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
       const dayPeriods = getPeriodsForDay(d);
       const td = document.createElement('td');
 
+      const cellH = 'h-[68px]'; // 全セル統一の高さ
+
       // この曜日のコマ数を超えている場合はグレーアウト
       if (p >= dayPeriods) {
-        td.className = 'border border-gray-200 bg-gray-100 h-16';
-        td.innerHTML = '<div class="h-full flex items-center justify-center text-gray-300 text-[10px]">-</div>';
+        td.className = `border border-gray-200 bg-gray-100 ${cellH}`;
+        td.innerHTML = '';
         row.appendChild(td);
         continue;
       }
 
       const slot = slots.find(s => s.day === d && s.period === p);
-      td.className = 'tt-cell border border-gray-200 p-1 align-top cursor-pointer transition-all duration-100 min-h-[56px] h-16 relative';
+      td.className = `tt-cell border border-gray-200 p-1 align-top cursor-pointer transition-all duration-100 ${cellH} relative overflow-hidden`;
       td.dataset.day = d; td.dataset.period = p;
 
       // 制約違反
@@ -424,7 +427,7 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
           <div class="text-[11px] font-bold text-gray-800 leading-tight truncate">${sName}</div>
           <div class="text-[9px] text-gray-500 truncate mt-0.5">${tName}</div>
           <div class="text-[8px] text-gray-400 truncate">${rName}</div>
-          ${slot.slotType && slot.slotType !== 'single' ? `<div class="text-[7px] mt-0.5"><span class="bg-gray-200 text-gray-600 px-1 rounded">${{'elective':'選択','course':'コース','team_teaching':'TT','double':'連続','fixed':'固定','special_room':'特別'}[slot.slotType] || slot.slotType}</span></div>` : ''}
+          ${slot.slotType && slot.slotType !== 'single' ? `<div class="text-[7px] mt-0.5"><span class="bg-gray-200 text-gray-600 px-1 rounded">${{'elective':'選択','course':'コース','team_teaching':'TT','double':'連続','fixed':'固定','special_room':'特別','meeting':'会議'}[slot.slotType] || slot.slotType}</span></div>` : ''}
         </div>`;
 
         // コマ入りセルクリック → 編集/削除
@@ -451,7 +454,7 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
           tbody.querySelectorAll('.candidate').forEach(c => c.classList.remove('candidate'));
         });
       } else {
-        td.innerHTML = '<div class="h-full min-h-[48px] flex items-center justify-center"><span class="text-gray-200 text-lg">+</span></div>';
+        td.innerHTML = '<div class="h-full flex items-center justify-center"><span class="text-gray-200 text-lg">+</span></div>';
         td.addEventListener('mouseenter', () => td.querySelector('span')?.classList.replace('text-gray-200', 'text-primary-300'));
         td.addEventListener('mouseleave', () => td.querySelector('span')?.classList.replace('text-primary-300', 'text-gray-200'));
         // 空セルクリック
@@ -505,6 +508,7 @@ const MASTER_COLS = {
     { key: 'targetGrades', label: '対象学年', fmt: v => (v||[]).join('・') || '全' },
     { key: 'courseRestriction', label: 'コース', fmt: v => v || '共通' },
     { key: 'isSchoolOriginal', label: '学校設定', fmt: v => v ? '独自' : '' },
+    { key: 'alternativeFor', label: '代替科目', fmt: (v, st) => v ? nameById(st.subjects, v) || v : '' },
   ],
 };
 
@@ -665,6 +669,25 @@ export function showEditModal(title, fields, values, onSave) {
       ).join('');
       inputHtml = `<select name="${f.key}" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none bg-white">
         <option value="">-- 選択 --</option>${opts}</select>`;
+    } else if (f.type === 'periodGrid') {
+      // 曜日×時限グリッド（授業不可時限用）
+      const blocked = Array.isArray(val) ? val : [];
+      const days = ['月','火','水','木','金'];
+      const numP = 6; // TODO: stateから取得
+      let gridHtml = '<div data-name="' + f.key + '" data-type="periodGrid" class="border border-gray-200 rounded-lg overflow-hidden mt-1">';
+      gridHtml += '<table class="w-full text-[10px]"><thead><tr><th class="bg-gray-50 px-1 py-1 border-b border-r border-gray-200 w-8"></th>';
+      for (let pi = 0; pi < numP; pi++) gridHtml += `<th class="bg-gray-50 px-1 py-1 border-b border-gray-200 text-center">${pi+1}限</th>`;
+      gridHtml += '</tr></thead><tbody>';
+      for (let di = 0; di < days.length; di++) {
+        gridHtml += `<tr><td class="bg-gray-50 px-2 py-1 border-r border-gray-200 font-semibold text-gray-600">${days[di]}</td>`;
+        for (let pi = 0; pi < numP; pi++) {
+          const isBlocked = blocked.some(b => b.day === di && b.period === pi);
+          gridHtml += `<td class="pg-cell text-center py-1.5 border-gray-100 border cursor-pointer transition-colors ${isBlocked ? 'bg-red-100 text-red-600' : 'hover:bg-gray-50'}" data-day="${di}" data-period="${pi}">${isBlocked ? 'x' : ''}</td>`;
+        }
+        gridHtml += '</tr>';
+      }
+      gridHtml += '</tbody></table></div><p class="text-[9px] text-gray-400 mt-1">赤いセル = 授業不可。クリックで切り替え</p>';
+      inputHtml = gridHtml;
     } else if (f.type === 'hidden') {
       inputHtml = `<input name="${f.key}" type="hidden" value="${valStr}">`;
     } else {
@@ -701,6 +724,22 @@ export function showEditModal(title, fields, values, onSave) {
     });
   });
 
+  // periodGridのクリックイベント
+  body.querySelectorAll('[data-type="periodGrid"]').forEach(grid => {
+    grid.addEventListener('click', e => {
+      const cell = e.target.closest('.pg-cell');
+      if (!cell) return;
+      const isBlocked = cell.classList.contains('bg-red-100');
+      if (isBlocked) {
+        cell.classList.remove('bg-red-100', 'text-red-600');
+        cell.textContent = '';
+      } else {
+        cell.classList.add('bg-red-100', 'text-red-600');
+        cell.textContent = 'x';
+      }
+    });
+  });
+
   // トグルスイッチのラベル更新
   body.querySelectorAll('input[type="checkbox"]:not(.cbg-input):not(.sr-only)').forEach(cb => {
     cb.addEventListener('change', () => {
@@ -725,6 +764,10 @@ export function showEditModal(title, fields, values, onSave) {
       } else if (f.type === 'checkboxGroup') {
         const checked = body.querySelectorAll(`[data-name="${f.key}"] .cbg-input:checked`);
         data[f.key] = Array.from(checked).map(c => c.value).join(',');
+      } else if (f.type === 'periodGrid') {
+        // 赤いセル = 授業不可時限
+        const blockedCells = body.querySelectorAll(`[data-name="${f.key}"] .pg-cell.bg-red-100`);
+        data[f.key] = Array.from(blockedCells).map(c => `${c.dataset.day}-${c.dataset.period}`).join(',');
       } else if (f.multi) {
         const tags = body.querySelectorAll(`[data-name="${f.key}"] .ms-tag.bg-primary-500`);
         data[f.key] = Array.from(tags).map(t => t.dataset.value).join(',');
