@@ -170,6 +170,117 @@ function greedyPlace(state, lessons, timeSlots) {
   return { state: result, placed, failed };
 }
 
+/**
+ * Phase 2b: クラスの空きコマを埋める
+ * 全科目配置後にまだ空きがあるクラスに対して、
+ * 週時数に余裕のある科目を追加配置する
+ */
+function fillEmptySlots(state, origState) {
+  const result = clone(state);
+  const classes = origState.classes || [];
+  const subjects = origState.subjects || [];
+  const teachers = origState.teachers || [];
+  const rooms = origState.rooms || [];
+  const defP = origState.meta?.periodsPerDay || DEFAULT_PERIODS;
+  const pByDay = origState.meta?.periodsPerDayByDay || {};
+  const workingDays = origState.meta?.workingDays || DEFAULT_DAYS;
+  let filled = 0;
+
+  for (const cls of classes) {
+    // このクラスの全コマ位置
+    const allSlotPositions = [];
+    for (const day of workingDays) {
+      const periods = Number(pByDay[day]) || defP;
+      for (let p = 0; p < periods; p++) allSlotPositions.push({ day, period: p });
+    }
+
+    // 現在配置済みのコマ位置
+    const filledSet = new Set();
+    for (const s of result.slots) {
+      if (s.classId === cls.id) filledSet.add(`${s.day}|${s.period}`);
+    }
+
+    // 空きコマ
+    const empties = allSlotPositions.filter(pos => !filledSet.has(`${pos.day}|${pos.period}`));
+    if (empties.length === 0) continue;
+
+    // このクラスに配置可能な科目リスト（学年・コース適合、週時数に余裕あり）
+    const classSlots = result.slots.filter(s => s.classId === cls.id);
+    const subjectHourCount = new Map();
+    for (const s of classSlots) {
+      subjectHourCount.set(s.subjectId, (subjectHourCount.get(s.subjectId) || 0) + 1);
+    }
+
+    // 追加配置候補: まだ週時数に達していない科目、または配置数が少ない科目
+    const candidates = subjects
+      .filter(subj => {
+        if (subj.targetGrades?.length > 0 && !subj.targetGrades.includes(cls.grade)) return false;
+        if (subj.courseRestriction && cls.course !== '共通' && cls.course !== '文理混合' && subj.courseRestriction !== cls.course) return false;
+        return true;
+      })
+      .map(subj => {
+        const current = subjectHourCount.get(subj.id) || 0;
+        const target = subj.hoursPerWeek || 0;
+        const deficit = target - current; // 正なら不足、0は充足、負は超過
+        return { subj, current, target, deficit };
+      })
+      .filter(c => c.deficit > 0) // 不足している科目のみ
+      .sort((a, b) => b.deficit - a.deficit); // 不足が大きい順
+
+    for (const empty of empties) {
+      if (candidates.length === 0) break;
+
+      // 最も不足している科目から試行
+      let placed = false;
+      for (let ci = 0; ci < candidates.length; ci++) {
+        const cand = candidates[ci];
+        // 教員を探す
+        const capable = teachers.filter(t => (t.subjects || []).includes(cand.subj.id));
+        for (const teacher of capable) {
+          // 教室を探す
+          let roomId;
+          if (cand.subj.requiresSpecialRoom) {
+            const dept = (cand.subj.department || '').toLowerCase();
+            const special = rooms.filter(r => r.type === '特別教室' || r.type === '体育施設');
+            const matched = special.find(r => {
+              const n = r.name.toLowerCase();
+              if (dept.includes('理科') || dept === '理数') return n.includes('実験');
+              if (dept.includes('体育')) return n.includes('体育') || n.includes('グラウンド');
+              if (dept.includes('芸術')) return n.includes('音楽') || n.includes('美術');
+              if (dept.includes('家庭')) return n.includes('家庭');
+              if (dept.includes('情報')) return n.includes('コンピュータ') || n.includes('PC');
+              return false;
+            });
+            roomId = matched?.id || special[0]?.id;
+          } else {
+            const cr = rooms.find(r => r.type === '普通教室' && r.name?.includes(cls.name?.substring(0, 3)));
+            roomId = cr?.id || rooms.find(r => r.type === '普通教室')?.id;
+          }
+          if (!roomId) continue;
+
+          const testSlot = {
+            day: empty.day, period: empty.period,
+            classId: cls.id, subjectId: cand.subj.id,
+            teacherId: teacher.id, roomId, slotType: 'single',
+          };
+
+          if (validateSlotPlacement(result, testSlot).valid) {
+            result.slots.push(testSlot);
+            cand.deficit--;
+            cand.current++;
+            if (cand.deficit <= 0) candidates.splice(ci, 1);
+            filled++;
+            placed = true;
+            break;
+          }
+        }
+        if (placed) break;
+      }
+    }
+  }
+  return { state: result, filled };
+}
+
 // ═══════════════════════════════════════════
 // Phase 3: ハイブリッド最適化
 //   焼きなまし法 + タブーサーチ + 適応的再加熱
@@ -208,6 +319,26 @@ function computeCost(state) {
   for (const [, dm] of tdm) {
     for (const [, count] of dm) {
       if (count > 4) cost += (count - 4) * 3;
+    }
+  }
+
+  // クラスの空きコマペナルティ（重い: 空きコマは基本的に許容しない）
+  const defP = state.meta?.periodsPerDay || 6;
+  const pByDay = state.meta?.periodsPerDayByDay || {};
+  const wDays = state.meta?.workingDays || [0,1,2,3,4];
+  const classFilledMap = new Map();
+  for (const s of slots) {
+    if (!s.classId) continue;
+    classFilledMap.set(`${s.classId}|${s.day}|${s.period}`, true);
+  }
+  for (const cls of state.classes || []) {
+    for (const day of wDays) {
+      const periods = Number(pByDay[day]) || defP;
+      for (let p = 0; p < periods; p++) {
+        if (!classFilledMap.has(`${cls.id}|${day}|${p}`)) {
+          cost += 50; // 空きコマ1つにつき重いペナルティ
+        }
+      }
     }
   }
 
@@ -395,11 +526,15 @@ export async function autoSchedule(state, options = {}) {
     const { state: greedy, placed, failed } = greedyPlace(base, lessons, timeSlots);
     await new Promise(r => setTimeout(r, 0));
 
-    if (onProgress) onProgress(runPctBase + 5, `試行 ${run + 1}: ${placed}コマ配置。最適化中...`);
+    // 空きコマ補完: 不足科目で空きを埋める
+    const { state: filled, filled: filledCount } = fillEmptySlots(greedy, state);
+    await new Promise(r => setTimeout(r, 0));
+
+    if (onProgress) onProgress(runPctBase + 5, `試行 ${run + 1}: ${placed + filledCount}コマ配置（補完${filledCount}）。最適化中...`);
 
     // ハイブリッド最適化
     const iterPerRun = Math.round(12000 / NUM_STARTS);
-    const optimized = await hybridOptimize(greedy, {
+    const optimized = await hybridOptimize(filled, {
       maxIterations: iterPerRun,
       onProgress: (pct, msg) => {
         if (onProgress) onProgress(runPctBase + 5 + Math.round(pct * runPctRange / 100), `試行${run + 1}: ${msg}`);

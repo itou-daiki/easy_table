@@ -244,6 +244,44 @@ export function validate(state) {
     }
   }
 
+  // クラスの空きコマチェック
+  if (isEnabled(con, 'classEmptySlots')) {
+    const defP = state.meta?.periodsPerDay || 6;
+    const pByDay = state.meta?.periodsPerDayByDay || {};
+    const workingDays = state.meta?.workingDays || [0,1,2,3,4];
+
+    for (const cls of state.classes || []) {
+      const classSlots = slots.filter(s => s.classId === cls.id);
+      // 選択グループのコマは1つとしてカウント
+      const filledSet = new Set();
+      for (const s of classSlots) filledSet.add(`${s.day}|${s.period}`);
+
+      const emptyList = [];
+      for (const day of workingDays) {
+        const periods = Number(pByDay[day]) || defP;
+        for (let p = 0; p < periods; p++) {
+          if (!filledSet.has(`${day}|${p}`)) {
+            emptyList.push({ day, period: p });
+          }
+        }
+      }
+
+      if (emptyList.length > 0) {
+        // 曜日ごとにまとめて表示
+        const byDay = new Map();
+        for (const e of emptyList) {
+          if (!byDay.has(e.day)) byDay.set(e.day, []);
+          byDay.get(e.day).push(e.period + 1);
+        }
+        const desc = [...byDay.entries()]
+          .map(([d, ps]) => `${DAY_JA[d]}${ps.join('・')}限`)
+          .join(', ');
+        push('classEmptySlots', 'soft', 'クラス空きコマ',
+          `${cls.name}に空きコマ${emptyList.length}件: ${desc}`, { classId: cls.id });
+      }
+    }
+  }
+
   // ── カスタム制約 ──
   for (const cc of state.customConstraints || []) {
     if (!cc.enabled) continue;

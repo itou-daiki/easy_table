@@ -46,6 +46,7 @@ function createInitialState() {
       courseRestriction:  { enabled: true, level: 'soft', label: 'コース制限チェック' },
       gradeRestriction:   { enabled: true, level: 'soft', label: '対象学年チェック' },
       requiredSubjects:   { enabled: true, level: 'soft', label: '必履修科目チェック' },
+      classEmptySlots:    { enabled: true, level: 'soft', label: 'クラス空きコマチェック' },
     },
     // カスタム制約（ユーザー定義）
     customConstraints: [],
