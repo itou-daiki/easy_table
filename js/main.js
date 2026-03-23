@@ -7,7 +7,7 @@ import {
   addSlot, removeSlot, updateSlot, addMasterRecord, updateMasterRecord, removeMasterRecord,
   undo, redo,
 } from './store.js';
-import { importCSV, exportMastersCSV, exportSlotsCSV } from './data.js';
+import { importCSV, exportMastersCSV, exportSlotsCSV, exportExcel, importExcel, downloadTemplate } from './data.js';
 import { validate } from './validator.js';
 import { autoSchedule, optimizeExisting } from './scheduler.js';
 import {
@@ -492,49 +492,71 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('csv-file-input')?.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      try {
-        const text = ev.target.result;
-        const firstLine = text.split('\n')[0] || '';
-        const type = detectCSVType(file.name, firstLine);
-        if (!type) { showNotification('データ種別を判別できません。ファイル名に教員/クラス/教室/科目/時間割を含めてください。', 'error'); return; }
-        const ns = importCSV(text, type, getState());
-        setState(ns); saveToLocalStorage();
-        viewId = populateEntityPicker(getState(), viewMode);
-        refresh();
-        showNotification(`${file.name} をインポートしました`, 'success');
-      } catch (err) { showNotification('インポート失敗: ' + err.message, 'error'); }
-    };
-    reader.readAsText(file);
+    const isExcel = file.name.endsWith('.xlsx') || file.name.endsWith('.xls');
+
+    if (isExcel) {
+      // Excelインポート（全シートを一括読み込み）
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const result = importExcel(new Uint8Array(ev.target.result), getState());
+          setState(result.state); saveToLocalStorage();
+          viewId = populateEntityPicker(getState(), viewMode);
+          refresh();
+          showNotification(`Excelインポート完了: ${result.importedSheets.join('・')}`, 'success');
+        } catch (err) { showNotification('Excelインポート失敗: ' + err.message, 'error'); }
+      };
+      reader.readAsArrayBuffer(file);
+    } else {
+      // CSVインポート（従来通り）
+      const reader = new FileReader();
+      reader.onload = ev => {
+        try {
+          const text = ev.target.result;
+          const firstLine = text.split('\n')[0] || '';
+          const type = detectCSVType(file.name, firstLine);
+          if (!type) { showNotification('データ種別を判別できません', 'error'); return; }
+          const ns = importCSV(text, type, getState());
+          setState(ns); saveToLocalStorage();
+          viewId = populateEntityPicker(getState(), viewMode);
+          refresh();
+          showNotification(`${file.name} をインポートしました`, 'success');
+        } catch (err) { showNotification('インポート失敗: ' + err.message, 'error'); }
+      };
+      reader.readAsText(file);
+    }
     e.target.value = '';
   });
 
   document.getElementById('btn-csv-export')?.addEventListener('click', () => {
-    const items = [
-      { key: 'all', label: '全データ（一括）' },
-      { key: 'teachers', label: '教員マスタ' },
-      { key: 'classes', label: 'クラスマスタ' },
-      { key: 'rooms', label: '教室マスタ' },
-      { key: 'subjects', label: '科目マスタ' },
-      { key: 'slots', label: '時間割データ' },
-    ];
-    showEditModal('CSVエクスポート', [
-      { key: 'target', label: 'エクスポート対象', options: items.map(i => ({ value: i.key, label: i.label })) },
-    ], { target: 'all' }, data => {
+    showEditModal('データエクスポート', [
+      { key: 'format', label: '形式', options: [
+        { value: 'excel', label: 'Excelファイル（.xlsx）- 全データ一括' },
+        { value: 'csv-all', label: 'CSVファイル（全種別を個別ダウンロード）' },
+        { value: 'csv-teachers', label: 'CSV: 教員マスタのみ' },
+        { value: 'csv-classes', label: 'CSV: クラスマスタのみ' },
+        { value: 'csv-rooms', label: 'CSV: 教室マスタのみ' },
+        { value: 'csv-subjects', label: 'CSV: 科目マスタのみ' },
+        { value: 'csv-slots', label: 'CSV: 時間割データのみ' },
+      ]},
+    ], { format: 'excel' }, data => {
       const state = getState();
-      if (data.target === 'all' || !data.target) {
+      if (data.format === 'excel') {
+        exportExcel(state);
+        showNotification('Excelファイルを出力しました', 'success');
+      } else if (data.format === 'csv-all') {
         exportMastersCSV(state, 'teachers');
         setTimeout(() => exportMastersCSV(state, 'classes'), 200);
         setTimeout(() => exportMastersCSV(state, 'rooms'), 400);
         setTimeout(() => exportMastersCSV(state, 'subjects'), 600);
         setTimeout(() => exportSlotsCSV(state), 800);
-      } else if (data.target === 'slots') {
-        exportSlotsCSV(state);
+        showNotification('CSVファイルを出力しました', 'success');
       } else {
-        exportMastersCSV(state, data.target);
+        const type = data.format.replace('csv-', '');
+        if (type === 'slots') exportSlotsCSV(state);
+        else exportMastersCSV(state, type);
+        showNotification('CSVファイルを出力しました', 'success');
       }
-      showNotification('CSVを出力しました', 'success');
     });
   });
 
@@ -556,6 +578,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (card) navigateTo(card.dataset.page);
   });
 
+  document.getElementById('btn-download-template')?.addEventListener('click', () => {
+    downloadTemplate();
+    showNotification('テンプレートをダウンロードしました', 'success');
+  });
   document.getElementById('btn-load-sample')?.addEventListener('click', loadSampleData);
   document.getElementById('btn-go-timetable')?.addEventListener('click', () => navigateTo('timetable'));
   document.getElementById('btn-reset-data')?.addEventListener('click', () => {

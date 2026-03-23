@@ -222,6 +222,149 @@ export function exportSlotsCSV(state) {
   triggerDownload(csv, '時間割データ.csv');
 }
 
+// ─── Excel（.xlsx）入出力 ───
+
+/** シート名とデータ種別のマッピング */
+const SHEET_NAMES = {
+  teachers: '教員', classes: 'クラス', rooms: '教室',
+  subjects: '科目', slots: '時間割',
+};
+const SHEET_NAME_TO_TYPE = {};
+for (const [k, v] of Object.entries(SHEET_NAMES)) { SHEET_NAME_TO_TYPE[v] = k; SHEET_NAME_TO_TYPE[k] = k; }
+
+/**
+ * 全データを1つのExcelファイル（.xlsx）としてエクスポートする
+ */
+export function exportExcel(state) {
+  if (typeof XLSX === 'undefined') { alert('SheetJSライブラリが読み込まれていません'); return; }
+  const wb = XLSX.utils.book_new();
+  const types = ['teachers', 'classes', 'rooms', 'subjects', 'slots'];
+  for (const type of types) {
+    const columns = COLUMN_DEFS[type];
+    const records = type === 'slots' ? (state.slots || []) : (state[type] || []);
+    // ヘッダー行
+    const header = columns.map(c => c.csv);
+    const rows = records.map(record =>
+      columns.map(col => {
+        const val = record[col.prop];
+        if (type === 'teachers' && col.prop === 'subjects') return Array.isArray(val) ? val.join(',') : String(val ?? '');
+        if (type === 'teachers' && col.prop === 'availableDays') return Array.isArray(val) ? val.join('|') : String(val ?? '');
+        if (type === 'teachers' && col.prop === 'unavailablePeriods') return Array.isArray(val) ? val.map(p => `${p.day}-${p.period}`).join('|') : String(val ?? '');
+        if (typeof val === 'boolean') return val ? 'true' : 'false';
+        if (Array.isArray(val)) return val.join('|');
+        return val ?? '';
+      })
+    );
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
+    // 列幅を自動調整
+    ws['!cols'] = header.map((h, i) => {
+      const maxLen = Math.max(h.length, ...rows.map(r => String(r[i] ?? '').length));
+      return { wch: Math.min(30, Math.max(8, maxLen + 2)) };
+    });
+    XLSX.utils.book_append_sheet(wb, ws, SHEET_NAMES[type] || type);
+  }
+  const schoolName = state.meta?.schoolName || '時間割';
+  const year = state.meta?.yearLabel || '';
+  const fileName = `${schoolName}${year ? '_' + year : ''}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+
+/**
+ * 入力用テンプレートExcelファイルをダウンロードする
+ * ヘッダー行＋記入例＋入力ガイドを含む
+ */
+export function downloadTemplate() {
+  if (typeof XLSX === 'undefined') { alert('SheetJSライブラリが読み込まれていません'); return; }
+  const wb = XLSX.utils.book_new();
+
+  // 各シートにヘッダー + サンプル行 + 入力ガイドを追加
+  const templates = {
+    teachers: {
+      examples: [
+        ['t01', '山田太郎', 's01|s02', '0|1|2|3|4', 'false', '5', '3', ''],
+        ['t02', '佐藤花子', 's03', '1|2|3', 'true', '3', '2', '0-0|4-5'],
+      ],
+      notes: '担当科目: 科目IDをパイプ(|)区切り / 出勤曜日: 0=月,1=火,2=水,3=木,4=金 / 授業不可時限: 曜日-時限 をパイプ区切り（例: 0-0 = 月曜1限）',
+    },
+    classes: {
+      examples: [
+        ['c01', '1年1組', '1', '共通'],
+        ['c02', '2年1組', '2', '文系'],
+        ['c03', '2年3組', '2', '理系'],
+      ],
+      notes: 'コース: 共通/文系/理系/文理混合/特進/普通',
+    },
+    rooms: {
+      examples: [
+        ['r01', '1年1組教室', '普通教室', '40'],
+        ['r02', '体育館', '体育施設', '200'],
+        ['r03', '物理実験室', '特別教室', '30'],
+      ],
+      notes: '種別: 普通教室/特別教室/体育施設/その他',
+    },
+    subjects: {
+      examples: [
+        ['s01', '現代の国語', '国語', '2', '2', 'true', '1', '', 'false', 'false', ''],
+        ['s02', '数学Ⅲ', '数学', '3', '3', 'false', '3', '理系', 'false', 'false', ''],
+        ['s03', 'プログラミング演習', '情報', '2', '2', 'false', '2|3', '', 'false', 'true', 's44'],
+      ],
+      notes: '対象学年: パイプ区切り(例:1|2|3) / コース制限: 文系/理系/空欄=共通 / 代替科目: 代替元の科目ID（空欄=なし）',
+    },
+    slots: {
+      examples: [
+        ['0', '0', 'c01', 's01', 't01', 'r01', 'single'],
+        ['0', '1', 'c01', 's02', 't02', 'r01', 'single'],
+        ['1', '2', 'c02', 's03', 't03', 'r03', 'meeting'],
+      ],
+      notes: '曜日: 0=月〜4=金 / 時限: 0始まり(0=1限) / コマ種別: single/elective/course/team_teaching/double/fixed/meeting',
+    },
+  };
+
+  const types = ['teachers', 'classes', 'rooms', 'subjects', 'slots'];
+  for (const type of types) {
+    const columns = COLUMN_DEFS[type];
+    const header = columns.map(c => c.csv);
+    const tmpl = templates[type];
+    const data = [header, ...tmpl.examples, [], ['【入力ガイド】'], [tmpl.notes]];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    // 列幅
+    ws['!cols'] = header.map((h, i) => {
+      const maxLen = Math.max(h.length, ...tmpl.examples.map(r => String(r[i] ?? '').length));
+      return { wch: Math.min(35, Math.max(8, maxLen + 2)) };
+    });
+    XLSX.utils.book_append_sheet(wb, ws, SHEET_NAMES[type]);
+  }
+
+  XLSX.writeFile(wb, '時間割テンプレート.xlsx');
+}
+
+/**
+ * Excelファイル（.xlsx）から全データをインポートする
+ * @param {ArrayBuffer} buffer - ファイルの内容
+ * @param {object} currentState - 現在の状態
+ * @returns {object} 更新後の状態
+ */
+export function importExcel(buffer, currentState) {
+  if (typeof XLSX === 'undefined') throw new Error('SheetJSライブラリが読み込まれていません');
+  const wb = XLSX.read(buffer, { type: 'array' });
+  let state = structuredClone(currentState);
+  let importedSheets = [];
+
+  for (const sheetName of wb.SheetNames) {
+    const type = SHEET_NAME_TO_TYPE[sheetName];
+    if (!type || !COLUMN_DEFS[type]) continue;
+    const ws = wb.Sheets[sheetName];
+    const csvText = XLSX.utils.sheet_to_csv(ws);
+    state = importCSV(csvText, type, state);
+    importedSheets.push(SHEET_NAMES[type] || type);
+  }
+
+  if (importedSheets.length === 0) {
+    throw new Error(`認識できるシートがありません。シート名は「${Object.values(SHEET_NAMES).join('」「')}」にしてください。`);
+  }
+  return { state, importedSheets };
+}
+
 /**
  * CSVインポート — CSVテキストを解析して状態に反映する
  * @param {string} csvText - CSVテキスト
