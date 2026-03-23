@@ -26,6 +26,10 @@ function refresh() {
   const state = getState();
   const valResult = state.slots?.length > 0 ? validate(state) : { errors: [], warnings: [] };
   renderDashboard(state, valResult);
+  // エンティティピッカーを常に最新に保つ
+  const prevId = viewId;
+  viewId = populateEntityPicker(state, viewMode);
+  if (!viewId && prevId) viewId = null; // 削除された場合
   if (currentPage === 'timetable') {
     renderTimetableGrid(state, viewMode, viewId, {}, handleSlotMove, handleCellClick, handleCellEdit);
   }
@@ -58,6 +62,11 @@ function handleSlotMove(from, to, slot) {
 
 function handleCellClick(day, period) {
   const state = getState();
+  // マスタデータが未登録の場合はガイド表示
+  if (!state.classes?.length || !state.subjects?.length) {
+    showNotification('先にクラスと科目のマスタデータを登録してください', 'warning');
+    return;
+  }
   const defaults = {};
   if (viewMode === 'class') defaults.classId = viewId;
   else if (viewMode === 'teacher') defaults.teacherId = viewId;
@@ -99,8 +108,6 @@ function handleCellClick(day, period) {
 function handleCellEdit(day, period, slot) {
   const state = getState();
   const dayName = ['月','火','水','木','金'][day];
-
-  const classOpts = (state.classes || []).map(c => ({ value: c.id, label: c.name }));
   const subjectOpts = (state.subjects || []).map(s => ({ value: s.id, label: s.name }));
   const teacherOpts = (state.teachers || []).map(t => ({ value: t.id, label: t.name }));
   const roomOpts = (state.rooms || []).map(r => ({ value: r.id, label: `${r.name} (${r.type})` }));
@@ -115,45 +122,35 @@ function handleCellEdit(day, period, slot) {
     { key: 'teacherId', label: '教員', options: teacherOpts },
     { key: 'roomId', label: '教室', options: roomOpts },
     { key: 'slotType', label: 'コマ種別', options: typeOpts },
-    { key: '_delete', label: '', type: 'hidden' },
   ];
 
-  // カスタムモーダル: 編集 + 削除ボタン
   showEditModal(`コマ編集 (${dayName}曜 ${period+1}限)`, fields, slot, data => {
-    if (data._delete === 'true') {
-      removeSlot(day, period, slot.classId);
-      showNotification('コマを削除しました', 'info');
-    } else {
-      updateSlot(day, period, slot.classId, {
-        subjectId: data.subjectId || slot.subjectId,
-        teacherId: data.teacherId || slot.teacherId,
-        roomId: data.roomId || slot.roomId,
-        slotType: data.slotType || slot.slotType,
-      });
-      showNotification('コマを更新しました', 'success');
-    }
+    updateSlot(day, period, slot.classId, {
+      subjectId: data.subjectId || slot.subjectId,
+      teacherId: data.teacherId || slot.teacherId,
+      roomId: data.roomId || slot.roomId,
+      slotType: data.slotType || slot.slotType,
+    });
     saveToLocalStorage();
     refreshTimetable();
+    showNotification('コマを更新しました', 'success');
   });
 
-  // 削除ボタンをモーダルに追加
+  // 削除ボタンをモーダル下部に追加
   setTimeout(() => {
     const body = document.getElementById('modal-body');
     if (!body) return;
-    // hidden フィールドを除去し、削除ボタンを追加
-    const hiddenDiv = body.querySelector('[name="_delete"]')?.closest('div');
-    if (hiddenDiv) {
-      hiddenDiv.innerHTML = `
-        <button id="btn-slot-delete" class="w-full mt-2 text-xs px-3 py-2 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors">
-          このコマを削除
-        </button>`;
-      document.getElementById('btn-slot-delete')?.addEventListener('click', () => {
-        const hiddenInput = body.querySelector('[name="_delete"]') || document.createElement('input');
-        hiddenInput.name = '_delete'; hiddenInput.value = 'true'; hiddenInput.type = 'hidden';
-        body.appendChild(hiddenInput);
-        document.getElementById('btn-modal-save')?.click();
-      });
-    }
+    const delBtn = document.createElement('button');
+    delBtn.className = 'w-full mt-3 text-xs px-3 py-2 rounded border border-red-200 text-red-600 hover:bg-red-50 transition-colors';
+    delBtn.textContent = 'このコマを削除';
+    delBtn.addEventListener('click', () => {
+      removeSlot(day, period, slot.classId);
+      saveToLocalStorage();
+      refreshTimetable();
+      document.getElementById('modal-overlay')?.classList.add('hidden');
+      showNotification('コマを削除しました', 'info');
+    });
+    body.appendChild(delBtn);
   }, 0);
 }
 
@@ -219,6 +216,16 @@ function handleEdit(type, id) {
 }
 
 function handleDelete(type, id) {
+  // 孤立スロットの警告チェック
+  const state = getState();
+  const keyMap = { teachers: 'teacherId', classes: 'classId', rooms: 'roomId', subjects: 'subjectId' };
+  const slotKey = keyMap[type];
+  if (slotKey) {
+    const orphanCount = (state.slots || []).filter(s => s[slotKey] === id).length;
+    if (orphanCount > 0) {
+      if (!confirm(`この${type === 'teachers' ? '教員' : type === 'classes' ? 'クラス' : type === 'rooms' ? '教室' : '科目'}を参照している時間割コマが${orphanCount}件あります。削除すると参照が壊れます。続行しますか？`)) return;
+    }
+  }
   removeMasterRecord(type, id);
   saveToLocalStorage(); refresh();
   showNotification('削除しました', 'info');
@@ -359,6 +366,8 @@ document.addEventListener('DOMContentLoaded', () => {
       total === 0 ? 'success' : 'warning');
   });
 
+  document.getElementById('btn-print')?.addEventListener('click', () => window.print());
+
   document.getElementById('btn-save')?.addEventListener('click', () => {
     saveToLocalStorage();
     showNotification('保存しました', 'success');
@@ -387,13 +396,31 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   document.getElementById('btn-csv-export')?.addEventListener('click', () => {
-    const state = getState();
-    exportMastersCSV(state, 'teachers');
-    setTimeout(() => exportMastersCSV(state, 'classes'), 200);
-    setTimeout(() => exportMastersCSV(state, 'rooms'), 400);
-    setTimeout(() => exportMastersCSV(state, 'subjects'), 600);
-    setTimeout(() => exportSlotsCSV(state), 800);
-    showNotification('CSVを出力しました', 'success');
+    const items = [
+      { key: 'all', label: '全データ（一括）' },
+      { key: 'teachers', label: '教員マスタ' },
+      { key: 'classes', label: 'クラスマスタ' },
+      { key: 'rooms', label: '教室マスタ' },
+      { key: 'subjects', label: '科目マスタ' },
+      { key: 'slots', label: '時間割データ' },
+    ];
+    showEditModal('CSVエクスポート', [
+      { key: 'target', label: 'エクスポート対象', options: items.map(i => ({ value: i.key, label: i.label })) },
+    ], { target: 'all' }, data => {
+      const state = getState();
+      if (data.target === 'all' || !data.target) {
+        exportMastersCSV(state, 'teachers');
+        setTimeout(() => exportMastersCSV(state, 'classes'), 200);
+        setTimeout(() => exportMastersCSV(state, 'rooms'), 400);
+        setTimeout(() => exportMastersCSV(state, 'subjects'), 600);
+        setTimeout(() => exportSlotsCSV(state), 800);
+      } else if (data.target === 'slots') {
+        exportSlotsCSV(state);
+      } else {
+        exportMastersCSV(state, data.target);
+      }
+      showNotification('CSVを出力しました', 'success');
+    });
   });
 
   // マスターデータ追加ボタン

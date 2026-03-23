@@ -117,6 +117,17 @@ export function renderDashboard(state, validationResult) {
 export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSlotMove, onCellClick, onCellEdit) {
   const grid = document.getElementById('timetable-grid');
   if (!grid) return;
+
+  // データがない場合の空状態表示
+  if (!viewId) {
+    grid.innerHTML = `<div class="flex flex-col items-center justify-center py-16 text-gray-400">
+      <div class="text-4xl mb-3">▦</div>
+      <p class="text-sm font-medium mb-1">表示対象が選択されていません</p>
+      <p class="text-xs">上のドロップダウンからクラス・教員・教室を選択してください</p>
+    </div>`;
+    return;
+  }
+
   const slots = (state.slots || []).filter(s => {
     if (viewMode === 'class') return s.classId === viewId;
     if (viewMode === 'teacher') return s.teacherId === viewId;
@@ -193,8 +204,16 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
           dragData = { day: d, period: p, slot: { ...s } };
           e.dataTransfer.effectAllowed = 'move';
           td.classList.add('dragging');
+          // 空セル（コマ情報なし）をハイライト
+          tbody.querySelectorAll('.tt-cell').forEach(c => {
+            if (!c.querySelector('[class*="subj-"]') && c !== td) c.classList.add('candidate');
+          });
         });
-        td.addEventListener('dragend', () => { td.classList.remove('dragging'); dragData = null; });
+        td.addEventListener('dragend', () => {
+          td.classList.remove('dragging');
+          dragData = null;
+          tbody.querySelectorAll('.candidate').forEach(c => c.classList.remove('candidate'));
+        });
       } else {
         td.innerHTML = '<div class="h-full min-h-[48px] flex items-center justify-center"><span class="text-gray-200 text-lg">+</span></div>';
         td.addEventListener('mouseenter', () => td.querySelector('span')?.classList.replace('text-gray-200', 'text-primary-300'));

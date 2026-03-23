@@ -85,17 +85,19 @@ function checkSoftConstraints(slots, teacherMap, subjectMap) {
     classId: extra.classId ?? null, teacherId: extra.teacherId ?? null, roomId: extra.roomId ?? null,
   });
 
-  // 教員ごと・日ごとのコマ数集計
+  // 教員ごと・日ごとのコマ数集計（区切りに|を使用。teacherIdにハイフンが含まれるため）
   const teacherDayPeriods = new Map();
   for (const s of slots) {
     if (!s.teacherId) continue;
-    const k = `${s.teacherId}-${s.day}`;
+    const k = `${s.teacherId}|${s.day}`;
     if (!teacherDayPeriods.has(k)) teacherDayPeriods.set(k, []);
     teacherDayPeriods.get(k).push(s.period);
   }
 
   for (const [key, periods] of teacherDayPeriods) {
-    const [teacherId, day] = key.split("-");
+    const sepIdx = key.lastIndexOf('|');
+    const teacherId = key.substring(0, sepIdx);
+    const day = key.substring(sepIdx + 1);
     const teacher = teacherMap.get(teacherId);
     if (!teacher) continue;
 

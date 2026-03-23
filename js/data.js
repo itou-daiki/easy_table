@@ -197,7 +197,8 @@ export function exportMastersCSV(state, type) {
   }
   const records = state[type] || [];
   const csv = toCSV(records, columns, type);
-  triggerDownload(csv, `${type}.csv`);
+  const names = { teachers: '教員マスタ', classes: 'クラスマスタ', rooms: '教室マスタ', subjects: '科目マスタ' };
+  triggerDownload(csv, `${names[type] || type}.csv`);
 }
 
 /**
@@ -206,7 +207,7 @@ export function exportMastersCSV(state, type) {
  */
 export function exportSlotsCSV(state) {
   const csv = toCSV(state.slots || [], COLUMN_DEFS.slots, 'slots');
-  triggerDownload(csv, 'slots.csv');
+  triggerDownload(csv, '時間割データ.csv');
 }
 
 /**
