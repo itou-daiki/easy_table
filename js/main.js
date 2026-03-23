@@ -26,6 +26,11 @@ function refresh() {
   const state = getState();
   const valResult = state.slots?.length > 0 ? validate(state) : { errors: [], warnings: [] };
   renderDashboard(state, valResult);
+  // ナビバッジ更新
+  for (const t of ['teachers', 'classes', 'rooms', 'subjects']) {
+    const badge = document.getElementById(`nav-badge-${t}`);
+    if (badge) badge.textContent = (state[t]?.length || 0) > 0 ? state[t].length : '';
+  }
   // エンティティピッカーを常に最新に保つ
   const prevId = viewId;
   viewId = populateEntityPicker(state, viewMode);
@@ -96,6 +101,15 @@ function handleCellClick(day, period) {
     if (!data.classId || !data.subjectId) {
       showNotification('クラスと科目は必須です', 'warning');
       return;
+    }
+    // 教員-科目の整合性チェック
+    if (data.teacherId) {
+      const teacher = (state.teachers || []).find(t => t.id === data.teacherId);
+      if (teacher && teacher.subjects?.length > 0 && !teacher.subjects.includes(data.subjectId)) {
+        const tName = teacher.name;
+        const sName = (state.subjects || []).find(s => s.id === data.subjectId)?.name || data.subjectId;
+        if (!confirm(`${tName}は「${sName}」の担当ではありません。続行しますか？`)) return;
+      }
     }
     addSlot({ day, period, ...data, slotType: data.slotType || 'single' });
     saveToLocalStorage();
@@ -242,13 +256,23 @@ function handleAdd(type) {
 
 // ─── CSV ───
 
-function detectCSVType(name) {
+function detectCSVType(name, headerLine) {
+  // ファイル名から推定
   const n = name.toLowerCase();
   if (n.includes('teacher') || n.includes('教員')) return 'teachers';
   if (n.includes('class') || n.includes('クラス')) return 'classes';
   if (n.includes('room') || n.includes('教室')) return 'rooms';
   if (n.includes('subject') || n.includes('科目')) return 'subjects';
   if (n.includes('slot') || n.includes('時間割')) return 'slots';
+  // ヘッダー内容から推定
+  if (headerLine) {
+    const h = headerLine.toLowerCase();
+    if (h.includes('氏名') || h.includes('非常勤') || h.includes('is_part_time')) return 'teachers';
+    if (h.includes('クラス名') || h.includes('grade')) return 'classes';
+    if (h.includes('定員') || h.includes('capacity')) return 'rooms';
+    if (h.includes('週時数') || h.includes('hours_per_week')) return 'subjects';
+    if (h.includes('曜日') || h.includes('時限') || h.includes('period')) return 'slots';
+  }
   return null;
 }
 
@@ -274,6 +298,14 @@ async function loadSampleData() {
   refresh();
   viewId = populateEntityPicker(getState(), viewMode);
   showNotification('サンプルデータを読み込みました', 'success');
+}
+
+function updateSaveIndicator() {
+  const el = document.getElementById('save-indicator');
+  if (!el) return;
+  const now = new Date();
+  el.textContent = `保存済 ${now.getHours()}:${String(now.getMinutes()).padStart(2, '0')}`;
+  el.classList.remove('hidden');
 }
 
 // ─── ページナビゲーション ───
@@ -308,6 +340,12 @@ function closeSidebar() {
 
 document.addEventListener('DOMContentLoaded', () => {
   loadFromLocalStorage();
+
+  // 自動保存（60秒ごと）
+  setInterval(() => {
+    saveToLocalStorage();
+    updateSaveIndicator();
+  }, 60000);
 
   // サイドバーナビゲーション
   document.getElementById('sidebar-nav')?.addEventListener('click', e => {
@@ -370,6 +408,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('btn-save')?.addEventListener('click', () => {
     saveToLocalStorage();
+    updateSaveIndicator();
     showNotification('保存しました', 'success');
   });
 
@@ -379,12 +418,14 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('csv-file-input')?.addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
-    const type = detectCSVType(file.name);
-    if (!type) { showNotification('ファイル名から種別を判別できません', 'error'); e.target.value = ''; return; }
     const reader = new FileReader();
     reader.onload = ev => {
       try {
-        const ns = importCSV(ev.target.result, type, getState());
+        const text = ev.target.result;
+        const firstLine = text.split('\n')[0] || '';
+        const type = detectCSVType(file.name, firstLine);
+        if (!type) { showNotification('データ種別を判別できません。ファイル名に教員/クラス/教室/科目/時間割を含めてください。', 'error'); return; }
+        const ns = importCSV(text, type, getState());
         setState(ns); saveToLocalStorage();
         viewId = populateEntityPicker(getState(), viewMode);
         refresh();
@@ -460,6 +501,24 @@ document.addEventListener('DOMContentLoaded', () => {
       const pages = { '1': 'dashboard', '2': 'timetable', '3': 'teachers', '4': 'classes', '5': 'rooms', '6': 'subjects' };
       if (pages[e.key]) navigateTo(pages[e.key]);
     }
+  });
+
+  // 設定の読み込み
+  const state = getState();
+  const nameInput = document.getElementById('setting-school-name');
+  const periodsSelect = document.getElementById('setting-periods');
+  if (nameInput) nameInput.value = state.meta?.schoolName || '';
+  if (periodsSelect) periodsSelect.value = String(state.meta?.periodsPerDay || 6);
+
+  document.getElementById('btn-save-settings')?.addEventListener('click', () => {
+    const s = getState();
+    s.meta = s.meta || {};
+    s.meta.schoolName = document.getElementById('setting-school-name')?.value || '';
+    s.meta.periodsPerDay = Number(document.getElementById('setting-periods')?.value) || 6;
+    setState(s);
+    saveToLocalStorage();
+    refresh();
+    showNotification('設定を保存しました', 'success');
   });
 
   // 初期描画

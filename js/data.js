@@ -241,11 +241,20 @@ export function importCSV(csvText, type, state) {
     return castRecord(record, type);
   });
 
+  // 空行やIDなしレコードを除外
+  const validRecords = records.filter(r => {
+    if (type === 'slots') return r.day != null && r.period != null && r.classId;
+    return r.id;
+  });
+
   const newState = structuredClone(state);
   if (type === 'slots') {
-    newState.slots = records;
+    newState.slots = validRecords;
   } else {
-    newState[type] = records;
+    // 既存データとマージ（同一IDは上書き、新規は追加）
+    const existing = new Map((newState[type] || []).map(r => [r.id, r]));
+    for (const r of validRecords) existing.set(r.id, r);
+    newState[type] = Array.from(existing.values());
   }
   return newState;
 }

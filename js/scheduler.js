@@ -254,9 +254,11 @@ export async function autoSchedule(state, options = {}) {
   const timeSlots = generateTimeSlots(state);
 
   if (lessons.length === 0) {
-    if (onProgress) onProgress(100, '配置する授業がありません');
+    if (onProgress) onProgress(100, '配置する授業がありません（クラス・科目・教員のマスタデータを確認してください）');
     return base;
   }
+
+  if (onProgress) onProgress(2, `${lessons.length}件の授業を${timeSlots.length}枠に配置します...`);
 
   if (onProgress) onProgress(5, 'バックトラッキング開始...');
 

@@ -44,16 +44,16 @@
         </button>
         <div class="pt-3 pb-1 px-3 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">マスタ管理</div>
         <button data-page="teachers" class="nav-item">
-          <span class="nav-icon">◉</span>教員
+          <span class="nav-icon">◉</span>教員<span id="nav-badge-teachers" class="ml-auto text-[9px] text-gray-400"></span>
         </button>
         <button data-page="classes" class="nav-item">
-          <span class="nav-icon">◎</span>クラス
+          <span class="nav-icon">◎</span>クラス<span id="nav-badge-classes" class="ml-auto text-[9px] text-gray-400"></span>
         </button>
         <button data-page="rooms" class="nav-item">
-          <span class="nav-icon">□</span>教室
+          <span class="nav-icon">□</span>教室<span id="nav-badge-rooms" class="ml-auto text-[9px] text-gray-400"></span>
         </button>
         <button data-page="subjects" class="nav-item">
-          <span class="nav-icon">▤</span>科目
+          <span class="nav-icon">▤</span>科目<span id="nav-badge-subjects" class="ml-auto text-[9px] text-gray-400"></span>
         </button>
       </nav>
       <div class="px-4 py-3 border-t border-gray-100 space-y-0.5">
@@ -79,6 +79,7 @@
         <h2 id="page-title" class="text-base font-semibold text-gray-800 truncate">ダッシュボード</h2>
         <div class="flex-1"></div>
         <div class="flex items-center gap-2">
+          <span id="save-indicator" class="text-[10px] text-gray-400 hidden">保存済</span>
           <button id="btn-csv-import" class="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">インポート</button>
           <button id="btn-csv-export" class="text-xs px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-50 transition-colors">エクスポート</button>
           <button id="btn-save" class="text-xs px-3 py-1.5 rounded bg-primary-500 text-white hover:bg-primary-600 transition-colors font-medium">保存</button>
@@ -103,6 +104,24 @@
                 <button id="btn-go-timetable" class="w-full text-left text-sm px-3 py-2 rounded border border-gray-200 hover:bg-primary-50 hover:border-primary-300 transition-colors">時間割を開く</button>
                 <button id="btn-reset-data" class="w-full text-left text-sm px-3 py-2 rounded border border-red-100 text-red-600 hover:bg-red-50 transition-colors">データをリセット</button>
               </div>
+            </div>
+          </div>
+          <div class="bg-white rounded-lg border border-gray-200 p-4 mt-4">
+            <h3 class="text-sm font-semibold text-gray-700 mb-3">学校設定</h3>
+            <div class="space-y-3">
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">学校名</label>
+                <input id="setting-school-name" type="text" placeholder="○○高等学校" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-1.5 focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+              </div>
+              <div>
+                <label class="block text-[11px] font-semibold text-gray-500 mb-1">1日のコマ数</label>
+                <select id="setting-periods" class="text-sm border border-gray-300 rounded-lg px-3 py-1.5 bg-white focus:ring-2 focus:ring-primary-200 focus:border-primary-400 outline-none">
+                  <option value="5">5コマ</option>
+                  <option value="6" selected>6コマ</option>
+                  <option value="7">7コマ</option>
+                </select>
+              </div>
+              <button id="btn-save-settings" class="text-xs px-3 py-1.5 rounded bg-primary-500 text-white hover:bg-primary-600 transition-colors font-medium">設定を保存</button>
             </div>
           </div>
         </div>

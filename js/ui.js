@@ -4,10 +4,12 @@
  */
 
 const DAY_LABELS = ['月', '火', '水', '木', '金'];
-const PERIOD_TIMES = [
+const DEFAULT_PERIOD_TIMES = [
   '8:50–9:40', '9:50–10:40', '10:50–11:40',
   '11:50–12:40', '13:30–14:20', '14:30–15:20',
+  '15:30–16:20', '16:30–17:20',
 ];
+const LUNCH_AFTER = 3; // 4限の後に昼休み（0始まり）
 
 /** IDで名前を引く */
 function nameById(list, id) {
@@ -53,6 +55,7 @@ export function renderDashboard(state, validationResult) {
     { label: '教室', count: state.rooms?.length || 0, icon: '□', accent: 'text-amber-600' },
     { label: '配置率', count: `${pct}%`, icon: '▦', accent: 'text-violet-600' },
   ];
+  const hasData = items.some(s => s.count > 0);
   stats.innerHTML = items.map(s => `
     <div class="bg-white rounded-lg border border-gray-200 p-4 hover:border-gray-300 transition-colors">
       <div class="flex items-center justify-between mb-1">
@@ -61,6 +64,12 @@ export function renderDashboard(state, validationResult) {
       </div>
       <div class="text-2xl font-bold ${s.accent}">${s.count}</div>
     </div>`).join('');
+  if (!hasData) {
+    stats.innerHTML += `<div class="col-span-2 lg:col-span-4 text-center py-4">
+      <p class="text-sm text-gray-500">データがありません</p>
+      <p class="text-xs text-gray-400 mt-1">「サンプルデータを読み込む」かCSVをインポートしてください</p>
+    </div>`;
+  }
 
   // 制約チェック結果
   const violDiv = document.getElementById('violations-content');
@@ -107,6 +116,59 @@ export function renderDashboard(state, validationResult) {
       </div>`;
     }
     html += `</div>`;
+  }
+
+  // クラス別週時数
+  if ((state.classes?.length || 0) > 0 && filled > 0) {
+    html += `<div class="mt-4"><div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">クラス別 週コマ数</div>`;
+    const classHours = (state.classes || []).map(c => {
+      const count = (state.slots || []).filter(s => s.classId === c.id).length;
+      const target = (state.meta?.periodsPerDay || 6) * 5;
+      return { name: c.name, count, target };
+    });
+    for (const c of classHours) {
+      const pct = c.target > 0 ? Math.min(100, Math.round((c.count / c.target) * 100)) : 0;
+      html += `<div class="flex items-center gap-2 mb-1.5">
+        <span class="text-[11px] text-gray-600 w-16 truncate">${c.name}</span>
+        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full bg-emerald-400 rounded-full" style="width:${pct}%"></div>
+        </div>
+        <span class="text-[10px] text-gray-400 w-12 text-right">${c.count}/${c.target}</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // 教室稼働率
+  if ((state.rooms?.length || 0) > 0 && filled > 0) {
+    html += `<div class="mt-4"><div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">教室稼働率</div>`;
+    const totalPossible = (state.meta?.periodsPerDay || 6) * 5;
+    const roomUsage = (state.rooms || []).map(r => {
+      const count = (state.slots || []).filter(s => s.roomId === r.id).length;
+      return { name: r.name, count, total: totalPossible };
+    }).sort((a, b) => b.count - a.count);
+    for (const r of roomUsage) {
+      const pct = r.total > 0 ? Math.min(100, Math.round((r.count / r.total) * 100)) : 0;
+      const barColor = pct >= 80 ? 'bg-red-400' : pct >= 50 ? 'bg-amber-400' : 'bg-cyan-400';
+      html += `<div class="flex items-center gap-2 mb-1.5">
+        <span class="text-[11px] text-gray-600 w-20 truncate">${r.name}</span>
+        <div class="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          <div class="h-full ${barColor} rounded-full" style="width:${pct}%"></div>
+        </div>
+        <span class="text-[10px] text-gray-400 w-8 text-right">${pct}%</span>
+      </div>`;
+    }
+    html += `</div>`;
+  }
+
+  // 科目カラー凡例
+  if ((state.subjects?.length || 0) > 0) {
+    html += `<div class="mt-4"><div class="text-[10px] font-semibold text-gray-500 uppercase tracking-wider mb-2">科目カラー</div>
+      <div class="flex flex-wrap gap-1.5">`;
+    for (let i = 0; i < state.subjects.length; i++) {
+      html += `<span class="subj-${i % 10} text-[10px] px-2 py-0.5 rounded">${state.subjects[i].name}</span>`;
+    }
+    html += `</div></div>`;
   }
 
   violDiv.innerHTML = html;
@@ -157,8 +219,8 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
   // ボディ
   const tbody = document.createElement('tbody');
   for (let p = 0; p < periods; p++) {
-    // 昼休み
-    if (p === 4) {
+    // 昼休み（4限の後）
+    if (p === LUNCH_AFTER + 1 && periods > 4) {
       const lr = document.createElement('tr');
       lr.innerHTML = `<td class="bg-amber-50 text-amber-600 text-[10px] font-semibold py-1 px-2 text-center border border-gray-200">昼休み</td>
         <td colspan="5" class="bg-amber-50 text-amber-500 text-[10px] text-center py-1 border border-gray-200">12:40 – 13:30</td>`;
@@ -168,7 +230,7 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
     // 時限ラベル
     const lbl = document.createElement('td');
     lbl.className = 'bg-gray-50 text-center py-2 px-2 border border-gray-200 w-20';
-    lbl.innerHTML = `<div class="text-xs font-semibold text-gray-700">${p + 1}限</div><div class="text-[9px] text-gray-400">${PERIOD_TIMES[p] || ''}</div>`;
+    lbl.innerHTML = `<div class="text-xs font-semibold text-gray-700">${p + 1}限</div><div class="text-[9px] text-gray-400">${DEFAULT_PERIOD_TIMES[p] || ''}</div>`;
     row.appendChild(lbl);
 
     for (let d = 0; d < 5; d++) {
@@ -185,10 +247,15 @@ export function renderTimetableGrid(state, viewMode, viewId, validationMap, onSl
       if (slot) {
         td.draggable = true;
         const colorCls = subjColorClass(state.subjects, slot.subjectId);
+        const sName = nameById(state.subjects, slot.subjectId);
+        const tName = nameById(state.teachers, slot.teacherId);
+        const rName = nameById(state.rooms, slot.roomId);
+        td.title = [sName, tName, rName].filter(Boolean).join(' / ');
         td.innerHTML = `<div class="rounded px-1.5 py-1 h-full flex flex-col justify-center ${colorCls}">
-          <div class="text-[11px] font-bold text-gray-800 leading-tight truncate">${nameById(state.subjects, slot.subjectId)}</div>
-          <div class="text-[9px] text-gray-500 truncate mt-0.5">${nameById(state.teachers, slot.teacherId)}</div>
-          <div class="text-[8px] text-gray-400 truncate">${nameById(state.rooms, slot.roomId)}</div>
+          <div class="text-[11px] font-bold text-gray-800 leading-tight truncate">${sName}</div>
+          <div class="text-[9px] text-gray-500 truncate mt-0.5">${tName}</div>
+          <div class="text-[8px] text-gray-400 truncate">${rName}</div>
+          ${slot.slotType && slot.slotType !== 'single' ? `<div class="text-[7px] mt-0.5"><span class="bg-gray-200 text-gray-600 px-1 rounded">${{'elective':'選択','course':'コース','team_teaching':'TT','double':'連続','fixed':'固定','special_room':'特別'}[slot.slotType] || slot.slotType}</span></div>` : ''}
         </div>`;
 
         // コマ入りセルクリック → 編集/削除
@@ -273,6 +340,7 @@ export function renderMasterTable(state, type, searchQuery, onEdit, onDelete) {
   const cols = MASTER_COLS[type];
   if (!cols) return;
 
+  const total = (state[type] || []).length;
   let records = state[type] || [];
   if (searchQuery) {
     const q = searchQuery.toLowerCase();
@@ -281,6 +349,11 @@ export function renderMasterTable(state, type, searchQuery, onEdit, onDelete) {
       return v.toLowerCase().includes(q);
     }));
   }
+
+  // 件数バッジ
+  const badge = document.createElement('div');
+  badge.className = 'px-4 py-2 text-[11px] text-gray-500 bg-gray-50 border-b border-gray-200';
+  badge.textContent = searchQuery ? `${records.length}件 / ${total}件中` : `${total}件`;
 
   const tbl = document.createElement('table');
   tbl.className = 'data-tbl w-full text-sm';
@@ -325,6 +398,7 @@ export function renderMasterTable(state, type, searchQuery, onEdit, onDelete) {
   // 古いリスナーを除去してから差し替え
   const newContainer = container.cloneNode(false);
   container.parentNode.replaceChild(newContainer, container);
+  newContainer.appendChild(badge);
   newContainer.appendChild(tbl);
 
   // イベント委譲（コンテナごと差し替え済みなのでリスナーは1つだけ）

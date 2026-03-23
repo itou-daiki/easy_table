@@ -35,6 +35,9 @@ function err(type, message, s) {
   return { type, message, day: s.day, period: s.period, classId: s.classId, teacherId: s.teacherId, roomId: s.roomId };
 }
 
+const DAY_JA = ['月','火','水','木','金'];
+function dayPeriodStr(day, period) { return `${DAY_JA[day] ?? day}曜${(period ?? 0) + 1}限`; }
+
 /** ハード制約を検証する */
 function checkHardConstraints(slots, teacherMap) {
   const errors = [];
@@ -44,7 +47,8 @@ function checkHardConstraints(slots, teacherMap) {
   for (const [, g] of byTeacher) {
     if (g.length > 1) {
       const s = g[0];
-      errors.push(err("教員重複", `教員${s.teacherId}が${s.day}曜${s.period}限に複数配置されています`, s));
+      const name = teacherMap.get(s.teacherId)?.name || s.teacherId;
+      errors.push(err("教員重複", `${name}が${dayPeriodStr(s.day, s.period)}に複数配置されています`, s));
     }
   }
 
@@ -53,7 +57,7 @@ function checkHardConstraints(slots, teacherMap) {
   for (const [, g] of byRoom) {
     if (g.length > 1) {
       const s = g[0];
-      errors.push(err("教室重複", `教室${s.roomId}が${s.day}曜${s.period}限に複数使用されています`, s));
+      errors.push(err("教室重複", `教室が${dayPeriodStr(s.day, s.period)}に複数使用されています`, s));
     }
   }
 
@@ -71,9 +75,19 @@ function checkHardConstraints(slots, teacherMap) {
     if (!s.teacherId) continue;
     const t = teacherMap.get(s.teacherId);
     if (t?.availableDays && !t.availableDays.includes(s.day)) {
-      errors.push(err("出勤日外", `教員${s.teacherId}は${s.day}曜が出勤日ではありません`, s));
+      errors.push(err("出勤日外", `教員${t?.name || s.teacherId}は${['月','火','水','木','金'][s.day] || s.day}曜が出勤日ではありません`, s));
     }
   }
+
+  // 5. クラスの同時限重複（同じクラスが同時に2つの授業）
+  const byClassTime = groupBy(slots, s => s.classId ? `${s.classId}|${s.day}|${s.period}` : null);
+  for (const [, g] of byClassTime) {
+    if (g.length > 1) {
+      const s = g[0];
+      errors.push(err("クラス重複", `クラスが${['月','火','水','木','金'][s.day] || s.day}曜${s.period + 1}限に複数配置されています`, s));
+    }
+  }
+
   return errors;
 }
 
